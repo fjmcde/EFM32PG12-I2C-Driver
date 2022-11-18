@@ -18,18 +18,18 @@
 //***********************************************************************************
 // static/private data
 //***********************************************************************************
-static volatile I2C_STATE_MACHINE_STRUCT i2c0_sm;
-static volatile I2C_STATE_MACHINE_STRUCT i2c1_sm;
+static volatile I2C_SM_STRUCT i2c0_sm;
+static volatile I2C_SM_STRUCT i2c1_sm;
 
 
 //***********************************************************************************
 // static/private functions
 //***********************************************************************************
 static void i2c_bus_reset(I2C_TypeDef *i2c);
-static void i2cn_ack_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm);
-static void i2cn_nack_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm);
-static void i2cn_rxdata_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm);
-static void i2cn_mstop_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm);
+static void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm);
+static void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm);
+static void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm);
+static void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm);
 
 
 //***********************************************************************************
@@ -159,8 +159,8 @@ void i2c_open(I2C_TypeDef *i2c, I2C_OPEN_STRUCT *app_i2c_open)
   I2C_Init(i2c, &i2c_init_values);
 
   // set route location for SDA and SCL
-  i2c->ROUTELOC0 |= app_i2c_open->sda_loc0;
-  i2c->ROUTELOC0 |= app_i2c_open->scl_loc0;
+  i2c->ROUTELOC0 |= app_i2c_open->sda_loc;
+  i2c->ROUTELOC0 |= app_i2c_open->scl_loc;
 
   // enable pin route
   i2c->ROUTEPEN |= app_i2c_open->sda_pen;
@@ -176,109 +176,109 @@ void i2c_open(I2C_TypeDef *i2c, I2C_OPEN_STRUCT *app_i2c_open)
  *  Start the I2C peripheral.
  *
  * @details
- *  Initializes the I2C state machine and sends the start command. Can be
- *  used with either I2C0 or I2C1.
+ *  Initializes and starts the I2C state machine. Can be used with either
+ *  the I2C0 or I2C1 peripheral.
  *
  * @param[in] i2c
  *  Pointer to desired I2Cn peripheral (either I2C0 or I2C1)
  *
  * @param[in] slave_addr
- *  Address for the slave device
+ *  Address of the slave device
  *
- *  @param[in] r_w
- *   Bit to perform either a read or a write
+ * @param[in] data
+ *   Pointer to data storage location
  *
- * @param[in] app_i2c_open
- *  All data required to open the I2C peripheral encapsulated in struct
+ * @param[in] rw
+ *   rw = 0 indicates read mode; rw = 1 indicates write mode.
+ *
+ * @param[in] device_cb
+ *  slave device's callback value. Used to schedule the corresponding callback
+ *  function after the I2C transaction is complete
  ******************************************************************************/
-void i2c_start(I2C_TypeDef *i2c, uint32_t slave_addr, uint32_t r_w,
-               volatile uint16_t *read_result, uint32_t si7021_cb)
+void i2c_start(I2C_TypeDef *i2c, uint32_t slave_addr,
+               volatile uint16_t *data, bool rw, uint32_t device_cb)
 {
-  // The I2C peripheral cannot cannot go below EM1
+  // the I2C peripheral cannot cannot go below EM2
   sleep_block_mode(I2C_EM_BLOCK);
 
-  // make atomic by disallowing interrupts
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
+  // atomic operation
+  CORE_CRITICAL_SECTION
+  (
+      // if starting the I2C0 peripheral ...
+      if(i2c == I2C0)
+      {
+          i2c_sm_init(i2c, I2C0_IRQn, &i2c0_sm, slave_addr, data, rw, device_cb);
+      }
 
-  // if starting the I2C0 peripheral ...
-  if(i2c == I2C0)
-  {
-      // halt until bus is ready
-      while(i2c0_sm.busy);
+      // if starting the I2C1 peripheral ...
+      if(i2c == I2C1)
+      {
+          i2c_sm_init(i2c, I2C1_IRQn, &i2c1_sm, slave_addr, data, rw, device_cb);
+      }
 
-      // will trigger if a previous I2C operation has not completed
-      EFM_ASSERT((I2C0->STATE & _I2C_STATE_STATE_MASK) == I2C_STATE_STATE_IDLE);
+      // 80ms timer delay to ensure RWM sync
+      timer_delay(I2C_80MS_DELAY);
+  );
 
-      // set busy bit
-      i2c0_sm.busy = I2C_BUS_BUSY;
-
-      // initialize static I2C0 state machine
-      i2c0_sm.I2Cn = i2c;
-      i2c0_sm.curr_state = req_res;
-      i2c0_sm.slave_addr = slave_addr;
-      i2c0_sm.r_w = r_w;
-      i2c0_sm.num_bytes = READ_2_BYTES;
-      i2c0_sm.rxdata = &i2c0_sm.I2Cn->RXDATA;
-      i2c0_sm.txdata = &i2c0_sm.I2Cn->TXDATA;
-      i2c0_sm.data = read_result;
-      i2c0_sm.i2c_cb = si7021_cb;
-
-      // enable interrupts
-      i2c0_sm.I2Cn->IEN = SI7021_I2C_IEN_MASK;
-      NVIC_EnableIRQ(I2C0_IRQn);
-
-      // start I2C0 peripheral
-      i2c0_sm.I2Cn->CMD = I2C_CMD_START;
+}
 
 
-      // TODO: MOVE TO APPLICATION LAYER?
-      // send slave addr + write bit
-      i2c0_sm.tx_cmd = (slave_addr << I2C_ADDR_RW_SHIFT) | i2c0_sm.r_w;
-      *i2c0_sm.txdata = i2c0_sm.tx_cmd;
-  }
+void i2c_sm_init(I2C_TypeDef *i2c, IRQn_Type IRQn, volatile I2C_SM_STRUCT *i2c_sm,
+                 uint32_t slave_addr, volatile uint16_t *data, bool rw, uint32_t device_cb)
+{
+  // halt until bus is ready
+     while(i2c_sm->busy);
 
-  // if starting the I2C1 peripheral ...
-  if(i2c == I2C1)
-  {
-      // halt until bus is ready
-      while(i2c1_sm.busy);
+     // will trigger if a previous I2C operation has not completed
+     EFM_ASSERT((i2c->STATE & _I2C_STATE_STATE_MASK) == I2C_STATE_STATE_IDLE);
 
-      // will trigger if a previous I2C operation has not completed
-      EFM_ASSERT((I2C1->STATE & _I2C_STATE_STATE_MASK) == I2C_STATE_STATE_IDLE);
+     // set busy bit
+     i2c_sm->busy = I2C_BUS_BUSY;
 
-      // set busy bit
-      i2c1_sm.busy = I2C_BUS_BUSY;
+     // initialize static I2C state machine
+     i2c_sm->I2Cn = i2c;
+     i2c_sm->slave_addr = slave_addr;
+     i2c_sm->rw_operation = rw;
+     i2c_sm->rxdata = &i2c_sm->I2Cn->RXDATA;
+     i2c_sm->txdata = &i2c_sm->I2Cn->TXDATA;
+     i2c_sm->data = data;
+     i2c_sm->i2c_cb = device_cb;
 
-      // initialize static I2C1 state machine
-      i2c1_sm.I2Cn = i2c;
-      i2c1_sm.curr_state = req_res;
-      i2c1_sm.slave_addr = slave_addr;
-      i2c1_sm.r_w = r_w;
-      i2c1_sm.num_bytes = READ_2_BYTES;
-      i2c1_sm.rxdata = &i2c1_sm.I2Cn->RXDATA;
-      i2c1_sm.txdata = &i2c1_sm.I2Cn->TXDATA;
-      i2c1_sm.data = read_result;
-      i2c1_sm.i2c_cb = si7021_cb;
+     // enable interrupts
+     i2c_sm->I2Cn->IEN = I2C_IEN_MASK;
+     NVIC_EnableIRQ(IRQn);
 
-      // enable interrupts
-      i2c1_sm.I2Cn->IEN = SI7021_I2C_IEN_MASK;
-      NVIC_EnableIRQ(I2C1_IRQn);
+     // transmit start
+     i2c_tx_start(i2c_sm, i2c_write_bit);
+}
 
-      // start I2C1 peripheral
-      i2c1_sm.I2Cn->CMD = I2C_CMD_START;
 
-      // TODO: MOVE TO APPLICATION LAYER?
-      // send slave addr + write bit
-      i2c1_sm.tx_cmd = (slave_addr << I2C_ADDR_RW_SHIFT) | i2c1_sm.r_w;
-      *i2c1_sm.txdata = i2c1_sm.tx_cmd;
-  }
+void i2c_tx_start(volatile I2C_SM_STRUCT *i2c_sm, I2C_RW_Typedef rw)
+{
+  // send start bit
+  i2c_sm->I2Cn->CMD = I2C_CMD_START;
 
-  // 80ms timer delay to ensure RWM sync
-  timer_delay(I2C_80MS_DELAY);
+  // construct 8-bit read/write header packet.
+  // 7 MSB = slave device's address
+  // LSB   =  read/write bit
+  uint8_t r_w_header = (i2c_sm->slave_addr << 1) | rw;
 
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
+  // transmit header packet
+  *i2c_sm->txdata = r_w_header;
+}
+
+
+void i2c_tx_stop(I2C_SM_STRUCT *i2c_sm)
+{
+  // set stop bit in I2C CMD register
+  i2c_sm->I2Cn->CMD = I2C_CMD_STOP;
+}
+
+
+void i2c_tx_cmd(I2C_SM_STRUCT *i2c_sm, uint32_t tx_cmd)
+{
+  // transmit command via TXDATA
+  *i2c_sm->txdata = tx_cmd;
 }
 
 
@@ -287,7 +287,7 @@ void i2c_start(I2C_TypeDef *i2c, uint32_t slave_addr, uint32_t r_w,
  *  I2C0 peripheral IRQ Handler
  *
  * @details
- *  Handles ACK, NACK, RXDATAV, and MSTOP interrupts
+ *  Handles ACK, NACK, RXDATAV, and MSTOP interrupts for the I2C0 peripheral
  ******************************************************************************/
 void I2C0_IRQHandler(void)
 {
@@ -328,7 +328,7 @@ void I2C0_IRQHandler(void)
  *  I2C1 peripheral IRQ Handler
  *
  * @details
- *  Handles ACK, NACK, RXDATAV, and MSTOP interrupts
+ *  Handles ACK, NACK, RXDATAV, and MSTOP interrupts for the I2C1 peripheral
  ******************************************************************************/
 void I2C1_IRQHandler(void)
 {
@@ -377,7 +377,7 @@ void I2C1_IRQHandler(void)
  *  Static state machine struct which corresponds to the desired I2Cn
  *  peripheral
  ******************************************************************************/
-void i2cn_ack_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm)
+void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm)
 {
   // make atomic by disallowing interrupts
   CORE_DECLARE_IRQ_STATE;
@@ -386,21 +386,20 @@ void i2cn_ack_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm)
   switch(i2c_sm->curr_state)
   {
     case req_res:
-      // change state
-      i2c_sm->curr_state = command_tx;
-
       // send command to measure relative humidity (no hold master mode)
       *i2c_sm->txdata = (measure_RH_NHMM);
+
+      // change state
+      i2c_sm->curr_state = command_tx;
       break;
     case command_tx:
-      // change state
-      i2c_sm->curr_state = data_req;
-
       // send repeated start command
       i2c_sm->I2Cn->CMD = I2C_CMD_START;
 
       // send slave addr + read bit
       *i2c_sm->txdata = ((i2c_sm->slave_addr << I2C_ADDR_RW_SHIFT) | SI7021_I2C_READ);
+      // change state
+      i2c_sm->curr_state = data_req;
       break;
     case data_req:
       // change state
@@ -432,7 +431,7 @@ void i2cn_ack_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm)
  *  Static state machine struct which corresponds to the desired I2Cn
  *  peripheral
  ******************************************************************************/
-void i2cn_nack_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm)
+void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm)
 {
   // make atomic by disallowing interrupts
   CORE_DECLARE_IRQ_STATE;
@@ -485,7 +484,7 @@ void i2cn_nack_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm)
  *  Static state machine struct which corresponds to the desired I2Cn
  *  peripheral
  ******************************************************************************/
-void i2cn_rxdata_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm)
+void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm)
 {
   // make atomic by disallowing interrupts
   CORE_DECLARE_IRQ_STATE;
@@ -546,7 +545,7 @@ void i2cn_rxdata_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm)
  *  Static state machine struct which corresponds to the desired I2Cn
  *  peripheral
  ******************************************************************************/
-void i2cn_mstop_sm(volatile I2C_STATE_MACHINE_STRUCT *i2c_sm)
+void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm)
 {
   // make atomic by disallowing interrupts
   CORE_DECLARE_IRQ_STATE;

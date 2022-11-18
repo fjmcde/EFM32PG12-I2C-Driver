@@ -27,8 +27,7 @@
 #define SI7021_ADDR            0x40     // Si7021 peripheral device address
 #define SI7021_I2C_READ        0X01     // READ BIT = 1; Si7021 TRM 5.1
 #define SI7021_I2C_WRITE       0X00     // WRITE BIT = 0; Si7021 TRM 5.1
-#define SI7021_I2C_IEN_MASK    0x1E0    // Enable ACK, NACK, RXDATAV and MSTOP interrupt flags
-#define RESET_READ_RESULT      0        // Use when resetting the read_result static variable
+#define RESET_READ_RESULT      0x00     // Use when resetting the read_result static variable
 
 
 //***********************************************************************************
@@ -54,6 +53,13 @@ typedef enum
   read_id_byte2_1       = 0xFC, /* Read Electronic ID 2nd Byte (Checksum byte required) */
   reset                 = 0xFE  /* Reset */
 }SI7021_I2C_COMMAND_Typedef;
+
+
+typedef struct
+{
+
+
+}SI7021_INIT_Typedef;
 
 //***********************************************************************************
 // structs

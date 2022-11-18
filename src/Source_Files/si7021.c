@@ -63,15 +63,14 @@ void si7021_i2c_open(I2C_TypeDef *i2c)
   app_i2c_open.master = true;
 
   // set route locations and enable pins
-  app_i2c_open.scl_loc0 = I2C_SCL_ROUTE;
-  app_i2c_open.sda_loc0 = I2C_SDA_ROUTE;
+  app_i2c_open.scl_loc = I2C_SCL_ROUTE;
+  app_i2c_open.sda_loc = I2C_SDA_ROUTE;
   app_i2c_open.scl_pen = I2C_SCL_PEN;
   app_i2c_open.sda_pen = I2C_SDA_PEN;
 
   // open I2C peripheral
   i2c_open(i2c, &app_i2c_open);
 }
-
 
 /***************************************************************************//**
  * @brief
@@ -88,18 +87,15 @@ void si7021_i2c_open(I2C_TypeDef *i2c)
  ******************************************************************************/
 void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb)
 {
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
+  // atomic operation
+  CORE_CRITICAL_SECTION
+  (
+      // reset read_result
+      read_result = RESET_READ_RESULT;
+  );
 
-  // reset read_result
-  read_result = RESET_READ_RESULT;
-
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
-
-
-  // start the I2C protocol (READ RH)
-  i2c_start(i2c, SI7021_ADDR, SI7021_I2C_WRITE, &read_result, si7021_cb);
+  // start I2C protocol
+  i2c_start(i2c, SI7021_ADDR, &read_result, true, si7021_cb);
 }
 
 
@@ -119,7 +115,7 @@ void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb)
 void si7021_i2c_write(I2C_TypeDef *i2c, uint32_t si7021_cb)
 {
   // start the I2C protocol (W)
-  i2c_start(i2c, SI7021_ADDR, SI7021_I2C_READ, &write_value, si7021_cb);
+  //i2c_start(i2c, SI7021_ADDR, &write_value, si7021_cb);
 
 }
 

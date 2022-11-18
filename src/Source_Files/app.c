@@ -32,6 +32,7 @@ static void app_letimer_pwm_open(float period, float act_period,
                                  uint32_t out0_route, uint32_t out1_route,
                                  bool out0_en, bool out1_en, bool out_en);
 
+
 //***********************************************************************************
 // function definitions
 //***********************************************************************************
@@ -42,14 +43,15 @@ static void app_letimer_pwm_open(float period, float act_period,
  * @details
  *   Opens all application specific peripherals
  ******************************************************************************/
-void app_peripheral_setup(void){
+void app_peripheral_setup(void)
+{
   cmu_open();
   gpio_open();
   sleep_open();
   scheduler_open();
   app_letimer_pwm_open(PWM_PER, PWM_ACT_PER, PWM_ROUTE_0, PWM_ROUTE_1, false, false, true);
   letimer_start(LETIMER0, true);
-  si7021_i2c_open(APP_I2Cn);
+  si7021_i2c_open(I2C0);
 }
 
 
@@ -106,8 +108,8 @@ void app_letimer_pwm_open(float period, float act_period,
  *   Handles the scheduling of the letimer0 underflow call back
  *
  * @details
- *   Removes the underflow call back event from the scheduler then
- *   asserts that the event has been cleared
+ *   Removes the underflow call back event from the scheduler then initializes
+ *   a read from the Si7021
  ******************************************************************************/
 void scheduled_letimer0_uf_cb(void)
 {
@@ -115,7 +117,7 @@ void scheduled_letimer0_uf_cb(void)
   remove_scheduled_event(LETIMER0_UF_CB);
 
   // read relative humidity using Si7021
-  si7021_i2c_read(APP_I2Cn, SI7021_HUM_READ_CB);
+  si7021_i2c_read(I2C0, SI7021_HUM_READ_CB);
 }
 
 
@@ -261,4 +263,9 @@ void scheduled_si7021_hum_read_cb(void)
       // De-assert LED1
       GPIO_PinOutClear(LED1_PORT, LED1_PIN);
   }
+
+  // TODO: Call temperature read function to read
+  //       the temperature from previous Relative
+  //       Humidity reading
+
 }
