@@ -19,7 +19,7 @@
 // static/private data
 //***********************************************************************************
 static volatile uint16_t read_result;
-static volatile uint16_t write_value;
+//static volatile uint16_t write_value;
 
 //***********************************************************************************
 // static/private functions
@@ -85,7 +85,7 @@ void si7021_i2c_open(I2C_TypeDef *i2c)
  * @param[in] si7021_cb
  *  Callback event to be scheduled after read operation is complete
  ******************************************************************************/
-void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb)
+void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb, bool checksum)
 {
   // atomic operation
   CORE_CRITICAL_SECTION
@@ -94,8 +94,35 @@ void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb)
       read_result = RESET_READ_RESULT;
   );
 
+  uint8_t bytes_req;
+
+  if(checksum)
+  {
+     bytes_req = SI7021_REQ_3_BYTES;
+  }
+  else
+  {
+     bytes_req = SI7021_REQ_2_BYTES;
+  }
+
+  // initialize local I2C state machine for i2c_start()
+  volatile I2C_SM_STRUCT i2c_start_sm;
+  i2c_start_sm.I2Cn = i2c;
+  i2c_start_sm.curr_state = req_res;
+  i2c_start_sm.slave_addr = SI7021_ADDR;
+  i2c_start_sm.read_operation = true;
+  i2c_start_sm.rxdata = &i2c->RXDATA;
+  i2c_start_sm.txdata = &i2c->TXDATA;
+  i2c_start_sm.data = &read_result;
+  i2c_start_sm.bytes_req = bytes_req;
+  i2c_start_sm.num_bytes = bytes_req;
+  i2c_start_sm.i2c_cb = si7021_cb;
+
   // start I2C protocol
-  i2c_start(i2c, SI7021_ADDR, &read_result, true, si7021_cb);
+  i2c_init_sm(&i2c_start_sm);
+
+  // transmit start
+  i2c_tx_start(&i2c_start_sm, i2c_read_bit);
 }
 
 
@@ -115,7 +142,7 @@ void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb)
 void si7021_i2c_write(I2C_TypeDef *i2c, uint32_t si7021_cb)
 {
   // start the I2C protocol (W)
-  //i2c_start(i2c, SI7021_ADDR, &write_value, si7021_cb);
+  //i2c_start();
 
 }
 

@@ -117,7 +117,7 @@ void scheduled_letimer0_uf_cb(void)
   remove_scheduled_event(LETIMER0_UF_CB);
 
   // read relative humidity using Si7021
-  si7021_i2c_read(I2C0, SI7021_HUM_READ_CB);
+  si7021_i2c_read(I2C0, SI7021_HUM_READ_CB, false);
 }
 
 

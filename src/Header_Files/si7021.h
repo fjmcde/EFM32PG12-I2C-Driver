@@ -22,13 +22,20 @@
 //***********************************************************************************
 // defined macros
 //***********************************************************************************
+/* Delays */
 #define DELAY80MS              0X50     // 80ms delay for [worst case] timer delay (DS Table 2 (cont.) pg 5)
+/* I2C Reference Frequency [refFreq] */
 #define REFFREQ                0X00     // Set to zero to use I2C frequency
+/* Device specific address */
 #define SI7021_ADDR            0x40     // Si7021 peripheral device address
+/* Read/Write bits for header packet construction */
 #define SI7021_I2C_READ        0X01     // READ BIT = 1; Si7021 TRM 5.1
 #define SI7021_I2C_WRITE       0X00     // WRITE BIT = 0; Si7021 TRM 5.1
+/* Bit Masks [read_result] */
 #define RESET_READ_RESULT      0x00     // Use when resetting the read_result static variable
-
+/* Number of bytes to expect */
+#define SI7021_REQ_2_BYTES     2        // number of bytes to expect from a read (Ignore checksum)
+#define SI7021_REQ_3_BYTES     3        // number of bytes to expect from a read (Checksum requested)
 
 //***********************************************************************************
 // enums
@@ -55,12 +62,6 @@ typedef enum
 }SI7021_I2C_COMMAND_Typedef;
 
 
-typedef struct
-{
-
-
-}SI7021_INIT_Typedef;
-
 //***********************************************************************************
 // structs
 //***********************************************************************************
@@ -70,7 +71,7 @@ typedef struct
 // function prototypes
 //***********************************************************************************
 void si7021_i2c_open(I2C_TypeDef *i2c);
-void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb);
+void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb, bool checksum);
 void si7021_i2c_write(I2C_TypeDef *i2c, uint32_t si7021_cb);
 float si7021_calc_RH(void);
 
