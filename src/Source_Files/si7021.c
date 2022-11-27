@@ -142,8 +142,14 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
  * @param[in] si7021_cb
  *  Callback event to be scheduled after write operation is complete
  ******************************************************************************/
-void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint32_t si7021_cb)
+void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, uint32_t si7021_cb)
 {
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  write_data = ctrl;
+
   // initialize local I2C state machine for i2c_start()
    volatile I2C_SM_STRUCT i2c_start_sm;
    i2c_start_sm.I2Cn = i2c;
@@ -157,6 +163,8 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint32_t si7021_
    i2c_start_sm.bytes_req = SI7021_TX_1_BYTE;
    i2c_start_sm.num_bytes = SI7021_TX_1_BYTE;
    i2c_start_sm.i2c_cb = si7021_cb;
+
+   CORE_EXIT_CRITICAL();
 
    // start I2C protocol
    i2c_init_sm(&i2c_start_sm);

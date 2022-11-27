@@ -116,6 +116,9 @@ void scheduled_letimer0_uf_cb(void)
   // remove LETIMER0 underflow callback even from scheduler
   remove_scheduled_event(LETIMER0_UF_CB);
 
+  // write to user register 1 on Si7021 to change measurement resolution
+  si7021_i2c_write(I2C0, write_reg1, measure_res_RH8_T12, SI7021_WRITE_REG_CB);
+
   // read relative humidity using Si7021
   si7021_i2c_read(I2C0, measure_RH_NHMM, false, SI7021_HUM_READ_CB);
 }
