@@ -25,11 +25,19 @@ static volatile I2C_SM_STRUCT i2c1_sm;
 //***********************************************************************************
 // static/private functions
 //***********************************************************************************
+/* I2C bus functions */
 static void i2c_bus_reset(I2C_TypeDef *i2c);
+/* Interrupt driven static state machine functions */
 static void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm);
 static void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm);
 static void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm);
 static void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm);
+/* static transmission functions */
+static void i2c_tx_ack(volatile I2C_SM_STRUCT *i2c_sm);
+static void i2c_tx_nack(volatile I2C_SM_STRUCT *i2c_sm);
+static void i2c_tx_cont(volatile I2C_SM_STRUCT *i2c_sm);
+static void i2c_tx_stop(volatile I2C_SM_STRUCT *i2c_sm);
+static void i2c_tx_cmd(volatile I2C_SM_STRUCT *i2c_sm, uint32_t tx_cmd);
 
 
 //***********************************************************************************
@@ -243,11 +251,10 @@ void i2c_init_sm(volatile I2C_SM_STRUCT *i2c_sm)
   timer_delay(I2C_80MS_DELAY);
 
   CORE_EXIT_CRITICAL();
-
 }
 
 
-void i2c_tx_start(volatile I2C_SM_STRUCT *i2c_sm, I2C_RW_Typedef rw)
+void i2c_tx_req(volatile I2C_SM_STRUCT *i2c_sm, I2C_RW_Typedef rw)
 {
   // send start bit
   i2c_sm->I2Cn->CMD = I2C_CMD_START;
@@ -262,14 +269,35 @@ void i2c_tx_start(volatile I2C_SM_STRUCT *i2c_sm, I2C_RW_Typedef rw)
 }
 
 
-void i2c_tx_stop(I2C_SM_STRUCT *i2c_sm)
+void i2c_tx_ack(volatile I2C_SM_STRUCT *i2c_sm)
+{
+  // set ACK bit in CMD register
+  i2c_sm->I2Cn->CMD = I2C_CMD_ACK;
+}
+
+
+void i2c_tx_nack(volatile I2C_SM_STRUCT *i2c_sm)
+{
+  // set NACK bit in CMD register
+  i2c_sm->I2Cn->CMD = I2C_CMD_NACK;
+}
+
+
+void i2c_tx_cont(volatile I2C_SM_STRUCT *i2c_sm)
+{
+  // set CMD CONT register
+  i2c_sm->I2Cn->CMD = I2C_CMD_CONT;
+}
+
+
+void i2c_tx_stop(volatile I2C_SM_STRUCT *i2c_sm)
 {
   // set stop bit in I2C CMD register
   i2c_sm->I2Cn->CMD = I2C_CMD_STOP;
 }
 
 
-void i2c_tx_cmd(I2C_SM_STRUCT *i2c_sm, uint32_t tx_cmd)
+void i2c_tx_cmd(volatile I2C_SM_STRUCT *i2c_sm, uint32_t tx_cmd)
 {
   // transmit command via TXDATA
   *i2c_sm->txdata = tx_cmd;
@@ -380,20 +408,38 @@ void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm)
   switch(i2c_sm->curr_state)
   {
     case req_res:
-      // send command to measure relative humidity (no hold master mode)
-      *i2c_sm->txdata = (measure_RH_NHMM);
-
       // change state
       i2c_sm->curr_state = command_tx;
+
+      // transmit command
+      i2c_tx_cmd(i2c_sm, i2c_sm->tx_cmd);
       break;
     case command_tx:
-      // send repeated start command
-      i2c_sm->I2Cn->CMD = I2C_CMD_START;
+      // if initial operation was a read ...
+      if(i2c_sm->read_operation)
+      {
+          // change state
+          i2c_sm->curr_state = data_req;
 
-      // send slave addr + read bit
-      *i2c_sm->txdata = ((i2c_sm->slave_addr << I2C_ADDR_RW_SHIFT) | SI7021_I2C_READ);
-      // change state
-      i2c_sm->curr_state = data_req;
+          // send repeated start command
+          i2c_tx_req(i2c_sm, i2c_read_bit);
+      }
+      // ... else ...
+      else
+      {
+          // ... write data
+          i2c_tx_cmd(i2c_sm, *i2c_sm->data);
+
+          // send ACK
+          i2c_tx_ack(i2c_sm);
+
+          //send STOP
+          i2c_tx_stop(i2c_sm);
+
+          // change state
+          i2c_sm->curr_state = m_stop;
+      }
+
       break;
     case data_req:
       // change state
@@ -435,24 +481,18 @@ void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm)
   {
     case req_res:
       // send repeated start command
-      i2c_sm->I2Cn->CMD = I2C_CMD_START;
-
-      // re-send slave addr + write bit
-      *i2c_sm->txdata = (i2c_sm->slave_addr | SI7021_I2C_WRITE);
+      i2c_tx_req(i2c_sm, i2c_write_bit);
       break;
     case command_tx:
-      // send CONT command
-      i2c_sm->I2Cn->CMD = I2C_CMD_CONT;
+      // set CMD CONT register
+      i2c_tx_cont(i2c_sm);
 
-      // re-send command to measure relative humidity (no hold master mode)
-      *i2c_sm->txdata = (measure_RH_NHMM);
+      // re-send command
+      i2c_tx_cmd(i2c_sm, i2c_sm->tx_cmd);
       break;
     case data_req:
       // re-send repeated start command
-      i2c_sm->I2Cn->CMD = I2C_CMD_START;
-
-      // re-send slave addr + read bit
-      *i2c_sm->txdata = (i2c_sm->slave_addr | SI7021_I2C_READ);
+      i2c_tx_req(i2c_sm, i2c_read_bit);
       break;
     default:
       EFM_ASSERT(false);
@@ -491,28 +531,29 @@ void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm)
       i2c_sm->num_bytes--;
 
       // retrieve read data, but left shift that data n number of bytes remaining
-      *i2c_sm->data |= (*i2c_sm->rxdata << (MSBYTE_SHIFT * i2c_sm->num_bytes));
+      *i2c_sm->data |= (*i2c_sm->rxdata << (SHIFT_MSBYTE * i2c_sm->num_bytes));
 
       // check if more data is expected ...
       if(i2c_sm->num_bytes > 0)
       {
           // send ACK
-          i2c_sm->I2Cn->CMD = I2C_CMD_ACK;
+          i2c_tx_ack(i2c_sm);
       }
       else
       {
-          // send NACK
-          i2c_sm->I2Cn->CMD = I2C_CMD_NACK;
-
           // change state
           i2c_sm->curr_state = m_stop;
 
+          // send NACK
+          i2c_tx_nack(i2c_sm);
+
           //send STOP
-          i2c_sm->I2Cn->CMD = I2C_CMD_STOP;
+          i2c_tx_stop(i2c_sm);
       }
 
       break;
     default:
+      EFM_ASSERT(false);
       break;
   }
 
@@ -553,7 +594,7 @@ void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // unblock sleep
       sleep_unblock_mode(I2C_EM_BLOCK);
 
-      // schedule humidity read call back even
+      // schedule device call back
       add_scheduled_event(i2c_sm->i2c_cb);
 
       // reset the I2C bus

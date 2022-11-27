@@ -23,27 +23,27 @@
 //***********************************************************************************
 // defined macros
 //***********************************************************************************
-// I2C route configuration
+/* I2C route configuration */
 #define I2C_SCL_ROUTE         APP_I2Cn_SCL_ROUTE          // SCL PC11: route location #15 (TRM 6.3 pg 75)
 #define I2C_SDA_ROUTE         APP_I2Cn_SDA_ROUTE          // SDA PC10: route location #15 (TRM 6.3 pg 78)
 #define I2C_SCL_PEN           I2C_ROUTEPEN_SCLPEN         // SCL PEN is bit 1 (TRM: 16.5.18)
 #define I2C_SDA_PEN           I2C_ROUTEPEN_SDAPEN         // SDA PEN is bit 2 (TRM 16.5.18)
-// I2Cn Clock
+/* I2Cn Clock */
 #define I2C_FREQ              I2C_FREQ_FAST_MAX           // Max I2C frequency is 4kHz (EFM32PG12 DS 4.1.20.2 & Si7021-A20 DS Table 3)
 #define I2C_CLHR_6_3          i2cClockHLRAsymetric        // IC2 CLHR 6:3 (TRM 16.5.1 & EFM32PG12 HAL I2C_ClockHLR_TypeDef enumeration)
-// I2Cn State Machine Bus Busy [busy]
+/* I2Cn State Machine Bus Busy [busy] */
 #define I2C_BUS_READY         false                       // Clear when bus is available
 #define I2C_BUS_BUSY          true                        // Set when bus is busy
-// I2C State Machine transit buffer [txdata]
+/* I2C State Machine transit buffer [txdata] */
 #define I2C_ADDR_RW_SHIFT     1                           // Left shift addr before or'ing r/w bit
-// I2C data bytes [data]
-#define MSBYTE_SHIFT          0X08                        // Left shift a byte in data register to accept another byte as LSB
+/* I2C data bytes [data] */
+#define SHIFT_MSBYTE          0X08                        // Left shift a byte in data register to accept another byte as LSB
 #define READ_2_BYTES          2                           // number of bytes expected for a read
-// I2C Energy Modes
+/* I2C Energy Modes */
 #define I2C_EM_BLOCK          EM2                         // I2C Cannot go below EM2
-// I2C Timer Delays
+/* I2C Timer Delays */
 #define I2C_80MS_DELAY        80                          // 80ms Delay for user with Timer delay to avoid RWM sync issues
-// I2C Interrupt masks [IEN]
+/* I2C Interrupt masks [IEN] */
 #define I2C_IEN_MASK          0x1E0                       // Enable ACK, NACK, RXDATAV and MSTOP interrupt flags
 /* Number of bytes requested [bytes_req] */
 #define I2C_BYTES_REQ_READ_2  2
@@ -54,9 +54,10 @@
 //***********************************************************************************
 typedef enum
 {
-  i2c_read_bit              = 0x00, /* Read bit for Read/Write header packet */
-  i2c_write_bit             = 0x01  /* Write bit for Read/Write header packet */
+  i2c_write_bit             = 0x00, /* Write bit for header packet (AN10216-01 I2C Manual) */
+  i2c_read_bit              = 0x01  /* Read bit for header packet (AN10216-01 I2C Manual) */
 }I2C_RW_Typedef;
+
 
 typedef enum
 {
@@ -85,7 +86,7 @@ typedef struct
 }I2C_OPEN_STRUCT;
 
 
-// I2C struct for managing the I2C state machine. Instantiated as a private
+// I2C struct for managing the I2C state machine. Instantiated as a static
 // data struct in i2c.c
 typedef struct
 {
@@ -97,22 +98,11 @@ typedef struct
     volatile const uint32_t      *rxdata;                 // pointer to I2C receiver buffer address
     volatile uint32_t            *txdata;                 // pointer to I2C transmit buffer address
     volatile uint16_t            *data;                   // pointer to static data variable
+    uint8_t                       tx_cmd;                 // command to transmit over I2C
     uint32_t                      bytes_req;              // number of bytes requested
     uint32_t                      num_bytes;              // number of bytes remaining
     uint32_t                      i2c_cb;                 // I2C call back event to request upon completion of I2C operation
 }I2C_SM_STRUCT;
-
-
-typedef struct
-{
-    I2C_TypeDef                  *I2Cn;
-    volatile I2C_SM_STRUCT       *i2c_sm;
-    uint32_t                      slave_addr;             // pointer to the address of slave device currently being communicated with
-    bool                          read_operation;
-    volatile uint16_t            *data;
-    uint32_t                      bytes_req;
-    uint32_t                      i2c_cb;
-}I2C_START_STRUCT;
 
 
 //***********************************************************************************
@@ -120,8 +110,6 @@ typedef struct
 //***********************************************************************************
 void i2c_open(I2C_TypeDef *i2c, I2C_OPEN_STRUCT *app_i2c_struct);
 void i2c_init_sm(volatile I2C_SM_STRUCT *i2c_sm);
-void i2c_tx_start(volatile I2C_SM_STRUCT *i2c_sm, I2C_RW_Typedef rw);
-void i2c_tx_stop(I2C_SM_STRUCT *i2c_sm);
-void i2c_tx_cmd(I2C_SM_STRUCT *i2c_sm, uint32_t tx_cmd);
+void i2c_tx_req(volatile I2C_SM_STRUCT *i2c_sm, I2C_RW_Typedef rw);
 
 #endif

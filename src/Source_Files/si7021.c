@@ -19,7 +19,7 @@
 // static/private data
 //***********************************************************************************
 static volatile uint16_t read_result;
-//static volatile uint16_t write_value;
+static volatile uint16_t write_data;
 
 //***********************************************************************************
 // static/private functions
@@ -85,14 +85,14 @@ void si7021_i2c_open(I2C_TypeDef *i2c)
  * @param[in] si7021_cb
  *  Callback event to be scheduled after read operation is complete
  ******************************************************************************/
-void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb, bool checksum)
+void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, uint32_t si7021_cb)
 {
   // atomic operation
-  CORE_CRITICAL_SECTION
-  (
-      // reset read_result
-      read_result = RESET_READ_RESULT;
-  );
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  // reset read_result
+  read_result = RESET_READ_RESULT;
 
   uint8_t bytes_req;
 
@@ -114,15 +114,18 @@ void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb, bool checksum)
   i2c_start_sm.rxdata = &i2c->RXDATA;
   i2c_start_sm.txdata = &i2c->TXDATA;
   i2c_start_sm.data = &read_result;
+  i2c_start_sm.tx_cmd = ((uint8_t) cmd);
   i2c_start_sm.bytes_req = bytes_req;
   i2c_start_sm.num_bytes = bytes_req;
   i2c_start_sm.i2c_cb = si7021_cb;
+
+  CORE_EXIT_CRITICAL();
 
   // start I2C protocol
   i2c_init_sm(&i2c_start_sm);
 
   // transmit start
-  i2c_tx_start(&i2c_start_sm, i2c_read_bit);
+  i2c_tx_req(&i2c_start_sm, i2c_write_bit);
 }
 
 
@@ -139,11 +142,27 @@ void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb, bool checksum)
  * @param[in] si7021_cb
  *  Callback event to be scheduled after write operation is complete
  ******************************************************************************/
-void si7021_i2c_write(I2C_TypeDef *i2c, uint32_t si7021_cb)
+void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint32_t si7021_cb)
 {
-  // start the I2C protocol (W)
-  //i2c_start();
+  // initialize local I2C state machine for i2c_start()
+   volatile I2C_SM_STRUCT i2c_start_sm;
+   i2c_start_sm.I2Cn = i2c;
+   i2c_start_sm.curr_state = req_res;
+   i2c_start_sm.slave_addr = SI7021_ADDR;
+   i2c_start_sm.read_operation = false;
+   i2c_start_sm.rxdata = &i2c->RXDATA;
+   i2c_start_sm.txdata = &i2c->TXDATA;
+   i2c_start_sm.data = &write_data;
+   i2c_start_sm.tx_cmd = ((uint8_t) cmd);
+   i2c_start_sm.bytes_req = SI7021_TX_1_BYTE;
+   i2c_start_sm.num_bytes = SI7021_TX_1_BYTE;
+   i2c_start_sm.i2c_cb = si7021_cb;
 
+   // start I2C protocol
+   i2c_init_sm(&i2c_start_sm);
+
+   // transmit start
+   i2c_tx_req(&i2c_start_sm, i2c_write_bit);
 }
 
 
@@ -168,4 +187,35 @@ float si7021_calc_RH(void)
   CORE_EXIT_CRITICAL();
 
   return rh;
+}
+
+
+float si7021_calc_temp(void)
+{
+  // make atomic by disallowing interrupts
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  // convert stored temperature code to degrees (°C) (SI7021-A20: 5.1.2)
+  float temp = ((175.71 * (float)read_result) / 65536) - 46.85;
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+
+  return temp;
+}
+
+
+uint32_t si7021_read_user_reg(void)
+{
+  // make atomic by disallowing interrupts
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  uint32_t data = read_result;
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+
+  return data;
 }

@@ -23,19 +23,19 @@
 // defined macros
 //***********************************************************************************
 /* Delays */
-#define DELAY80MS              0X50     // 80ms delay for [worst case] timer delay (DS Table 2 (cont.) pg 5)
+#define DELAY80MS               50                // 80ms delay for [worst case] timer delay (DS Table 2 (cont.) pg 5)
 /* I2C Reference Frequency [refFreq] */
-#define REFFREQ                0X00     // Set to zero to use I2C frequency
+#define REFFREQ                 0                 // Set to zero to use I2C frequency
 /* Device specific address */
-#define SI7021_ADDR            0x40     // Si7021 peripheral device address
-/* Read/Write bits for header packet construction */
-#define SI7021_I2C_READ        0X01     // READ BIT = 1; Si7021 TRM 5.1
-#define SI7021_I2C_WRITE       0X00     // WRITE BIT = 0; Si7021 TRM 5.1
+#define SI7021_ADDR             0x40              // Si7021 peripheral device address
 /* Bit Masks [read_result] */
-#define RESET_READ_RESULT      0x00     // Use when resetting the read_result static variable
-/* Number of bytes to expect */
-#define SI7021_REQ_2_BYTES     2        // number of bytes to expect from a read (Ignore checksum)
-#define SI7021_REQ_3_BYTES     3        // number of bytes to expect from a read (Checksum requested)
+#define RESET_READ_RESULT       0x00              // Use when resetting the read_result static variable
+/* Bit Masks [write_data] */
+#define RESET_WRITE_DATA        0x00              // Use when resetting the write_data static variable
+/* Number of bytes I2C should expect */
+#define SI7021_TX_1_BYTE        1                 // number of bytes to expect from a write (transmit single bytes)
+#define SI7021_REQ_2_BYTES      2                 // number of bytes to expect from a read (Ignore checksum)
+#define SI7021_REQ_3_BYTES      3                 // number of bytes to expect from a read (Checksum requested)
 
 //***********************************************************************************
 // enums
@@ -59,7 +59,7 @@ typedef enum
   read_id_byte1_1       = 0xFA, /* Read Electronic ID 1st Byte (Checksum byte required) */
   read_id_byte2_1       = 0xFC, /* Read Electronic ID 2nd Byte (Checksum byte required) */
   reset                 = 0xFE  /* Reset */
-}SI7021_I2C_COMMAND_Typedef;
+}SI7021_CMD_Typedef;
 
 
 //***********************************************************************************
@@ -70,9 +70,15 @@ typedef enum
 //***********************************************************************************
 // function prototypes
 //***********************************************************************************
+/* Peripheral open function */
 void si7021_i2c_open(I2C_TypeDef *i2c);
-void si7021_i2c_read(I2C_TypeDef *i2c, uint32_t si7021_cb, bool checksum);
-void si7021_i2c_write(I2C_TypeDef *i2c, uint32_t si7021_cb);
+/* R/W operation functions */
+void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, uint32_t si7021_cb);
+void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint32_t si7021_cb);
+/* Conversion functions */
 float si7021_calc_RH(void);
+float si7021_calc_temp(void);
+/* Accessor member functions */
+uint32_t si7021_read_user_reg(void);
 
 #endif

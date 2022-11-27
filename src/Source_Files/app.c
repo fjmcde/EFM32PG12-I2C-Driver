@@ -117,7 +117,7 @@ void scheduled_letimer0_uf_cb(void)
   remove_scheduled_event(LETIMER0_UF_CB);
 
   // read relative humidity using Si7021
-  si7021_i2c_read(I2C0, SI7021_HUM_READ_CB, false);
+  si7021_i2c_read(I2C0, measure_RH_NHMM, false, SI7021_HUM_READ_CB);
 }
 
 
@@ -264,8 +264,40 @@ void scheduled_si7021_hum_read_cb(void)
       GPIO_PinOutClear(LED1_PORT, LED1_PIN);
   }
 
-  // TODO: Call temperature read function to read
-  //       the temperature from previous Relative
-  //       Humidity reading
+  // read temperature from previous previous RH measurement
+  si7021_i2c_read(I2C0, read_T_from_prev_RH, false, SI7021_TEMP_READ_CB);
+}
 
+
+void scheduled_si7021_temp_read_cb(void)
+{
+  remove_scheduled_event(SI7021_TEMP_READ_CB);
+
+  EFM_ASSERT(!(get_scheduled_events() & SI7021_TEMP_READ_CB));
+
+  float temp = si7021_calc_temp();
+
+  printf("Temperature: %3.6f", temp);
+}
+
+
+void scheduled_si7021_write_reg(void)
+{
+  remove_scheduled_event(SI7021_WRITE_REG_CB);
+
+  EFM_ASSERT(!(get_scheduled_events() & SI7021_WRITE_REG_CB));
+
+  si7021_i2c_read(I2C0, read_reg1, false, SI7021_READ_RED_CB);
+}
+
+
+void scheduled_si7021_read_reg(void)
+{
+  remove_scheduled_event(SI7021_READ_RED_CB);
+
+  EFM_ASSERT(!(get_scheduled_events() & SI7021_READ_RED_CB));
+
+  uint32_t data = si7021_read_user_reg();
+
+  printf("Data in User Register 1: %lu", data);
 }
