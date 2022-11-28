@@ -210,10 +210,6 @@ void i2c_init_sm(volatile I2C_SM_STRUCT *i2c_sm)
   // the I2C peripheral cannot cannot go below EM2
   sleep_block_mode(I2C_EM_BLOCK);
 
-  // atomic operation
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
   // set busy bit
   i2c_sm->busy = I2C_BUS_BUSY;
 
@@ -229,7 +225,14 @@ void i2c_init_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // will trigger if a previous I2C operation has not completed
       EFM_ASSERT((I2C0->STATE & _I2C_STATE_STATE_MASK) == I2C_STATE_STATE_IDLE);
 
+      // make operation atomic
+      CORE_DECLARE_IRQ_STATE;
+      CORE_ENTER_CRITICAL();
+
       i2c0_sm = *i2c_sm;
+
+      CORE_EXIT_CRITICAL();
+
       NVIC_EnableIRQ(I2C0_IRQn);
   }
 
@@ -243,14 +246,20 @@ void i2c_init_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // will trigger if a previous I2C operation has not completed
       EFM_ASSERT((I2C1->STATE & _I2C_STATE_STATE_MASK) == I2C_STATE_STATE_IDLE);
 
+      // make operation atomic
+      CORE_DECLARE_IRQ_STATE;
+      CORE_ENTER_CRITICAL();
+
       i2c1_sm = *i2c_sm;
+
+      CORE_EXIT_CRITICAL();
       NVIC_EnableIRQ(I2C1_IRQn);
   }
 
   // 80ms timer delay to ensure RWM sync
   timer_delay(I2C_80MS_DELAY);
 
-  CORE_EXIT_CRITICAL();
+
 }
 
 
@@ -407,43 +416,57 @@ void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm)
 
   switch(i2c_sm->curr_state)
   {
-    case req_res:
+    case reqRes:
       // change state
-      i2c_sm->curr_state = command_tx;
+      i2c_sm->curr_state = commandTx;
 
       // transmit command
       i2c_tx_cmd(i2c_sm, i2c_sm->tx_cmd);
       break;
-    case command_tx:
+    case commandTx:
       // if initial operation was a read ...
       if(i2c_sm->read_operation)
       {
-          // change state
-          i2c_sm->curr_state = data_req;
-
           // send repeated start command
-          i2c_tx_req(i2c_sm, i2c_read_bit);
+          i2c_tx_req(i2c_sm, i2cReadBit);
+
+          // change state
+          i2c_sm->curr_state = dataReq;
       }
       // ... else ...
       else
       {
-          // ... write data
+          // ... write data to transmit buffer
           i2c_tx_cmd(i2c_sm, *i2c_sm->data);
 
-          // send ACK
-          i2c_tx_ack(i2c_sm);
-
-          //send STOP
-          i2c_tx_stop(i2c_sm);
-
           // change state
-          i2c_sm->curr_state = m_stop;
+          i2c_sm->curr_state = dataRx;
+
       }
 
       break;
-    case data_req:
+    case dataReq:
       // change state
-      i2c_sm->curr_state = data_rx;
+      i2c_sm->curr_state = dataRx;
+      break;
+    case dataRx:
+      // if initial operation was a write ...
+      if(!(i2c_sm->read_operation))
+      {
+          // send stop
+          i2c_tx_stop(i2c_sm);
+
+          // change state
+          i2c_sm->curr_state = mStop;
+      }
+      // ... else read operation ...
+      else
+      {
+          // entering this else indicates an error in logic
+          // in the data_rx state, a read request will have already been
+          // acknowledged and the slave should NOT ACK.
+          EFM_ASSERT(false);
+      }
       break;
     default:
       EFM_ASSERT(false);
@@ -451,7 +474,7 @@ void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm)
   }
 
   // 80ms timer delay for RWM sync
-  timer_delay(I2C_80MS_DELAY);
+  timer_delay(10);
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
@@ -479,20 +502,28 @@ void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm)
 
   switch(i2c_sm->curr_state)
   {
-    case req_res:
+    case reqRes:
       // send repeated start command
-      i2c_tx_req(i2c_sm, i2c_write_bit);
+      i2c_tx_req(i2c_sm, i2cWriteBit);
       break;
-    case command_tx:
+    case commandTx:
       // set CMD CONT register
       i2c_tx_cont(i2c_sm);
 
       // re-send command
       i2c_tx_cmd(i2c_sm, i2c_sm->tx_cmd);
       break;
-    case data_req:
-      // re-send repeated start command
-      i2c_tx_req(i2c_sm, i2c_read_bit);
+    case dataReq:
+      if(i2c_sm->read_operation)
+      {
+          // re-send repeated start command
+          i2c_tx_req(i2c_sm, i2cReadBit);
+      }
+      else
+      {
+          i2c_tx_req(i2c_sm, i2cWriteBit);
+      }
+
       break;
     default:
       EFM_ASSERT(false);
@@ -526,31 +557,41 @@ void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm)
 
   switch(i2c_sm->curr_state)
   {
-    case data_rx:
-      // decrement num_bytes counter
-      i2c_sm->num_bytes--;
-
-      // retrieve read data, but left shift that data n number of bytes remaining
-      *i2c_sm->data |= (*i2c_sm->rxdata << (SHIFT_MSBYTE * i2c_sm->num_bytes));
-
-      // check if more data is expected ...
-      if(i2c_sm->num_bytes > 0)
+    case dataRx:
+      // if initial operation was a read ...
+      if(i2c_sm->read_operation)
       {
-          // send ACK
-          i2c_tx_ack(i2c_sm);
+          // decrement num_bytes counter
+          i2c_sm->num_bytes--;
+
+          // retrieve read data, but left shift that data n number of bytes remaining
+          *i2c_sm->data |= (*i2c_sm->rxdata << (SHIFT_MSBYTE * i2c_sm->num_bytes));
+
+          // check if more data is expected ...
+          if(i2c_sm->num_bytes > 0)
+          {
+              // send ACK
+              i2c_tx_ack(i2c_sm);
+          }
+          else
+          {
+              // send NACK
+              i2c_tx_nack(i2c_sm);
+
+              // send stop
+              i2c_tx_stop(i2c_sm);
+
+              //change state
+              i2c_sm->curr_state = mStop;
+          }
       }
+      // ... else write ...
       else
       {
-          // change state
-          i2c_sm->curr_state = m_stop;
-
-          // send NACK
-          i2c_tx_nack(i2c_sm);
-
-          //send STOP
-          i2c_tx_stop(i2c_sm);
+          // entering this else indicates an error in logic
+          // a write should NOT generate an RXDATAV interrupt
+          EFM_ASSERT(false);
       }
-
       break;
     default:
       EFM_ASSERT(false);
@@ -587,10 +628,7 @@ void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm)
 
   switch(i2c_sm->curr_state)
   {
-    case m_stop:
-      // clear I2C State Machine busy bit
-      i2c_sm->busy = I2C_BUS_READY;
-
+    case mStop:
       // unblock sleep
       sleep_unblock_mode(I2C_EM_BLOCK);
 
@@ -599,6 +637,9 @@ void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm)
 
       // reset the I2C bus
       i2c_bus_reset(i2c_sm->I2Cn);
+
+      // clear I2C State Machine busy bit
+      i2c_sm->busy = I2C_BUS_READY;
       break;
     default:
       EFM_ASSERT(false);

@@ -57,25 +57,6 @@
 #define SHTC3_SENSOR_EN_PORT    gpioPortB                   // Port enabled
 #define SHTC3_LINE_DEFAULT      1                           // Line is powered and connected
 
-// button configuration
-#define BUTTON_0_PORT           gpioPortF       // Port F (UG257 6.1)
-#define BUTTON_0_PIN            06u             // Pin 6 (UG257 6.1)
-#define BUTTON_0_CONFIG         gpioModeInput   // input enabled; filter if DOUT is set (TRM 31.5.2)
-#define BUTTON_1_PORT           gpioPortF       // Port F (UG257 6.1)
-#define BUTTON_1_PIN            07u             // Pin 7 (UG257 6.1)
-#define BUTTON_1_CONFIG         gpioModeInput   // input enabled; filter if DOUT is set (TRM 31.5.2)
-#define BUTTON_DEFAULT          true            // input filter enabled
-
-// button interrupt configuration
-#define BUTTON_0_INT_NUM        BUTTON_0_PIN    // pin for button interrupt
-#define BUTTON_0_INT_RISING     false           // false: don't trigger interrupt on rising edge
-#define BUTTON_0_INT_FALLING    true            // true: trigger interrupt on falling edge
-#define BUTTON_0_INT_ENABLE     true            // enable interrupt on button 0
-#define BUTTON_1_INT_NUM        BUTTON_1_PIN    // pin for button interrupt
-#define BUTTON_1_INT_RISING     false           // false: don't trigger interrupt on rising edge
-#define BUTTON_1_INT_FALLING    true            // true: trigger interrupt on falling edge
-#define BUTTON_1_INT_ENABLE     true            // enable interrupt on button 1
-
 // GPIO pin configuration
 #define STRONG_DRIVE
 

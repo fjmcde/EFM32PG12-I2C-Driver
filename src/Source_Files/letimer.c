@@ -18,8 +18,6 @@
 //***********************************************************************************
 // static/private data
 //***********************************************************************************
-static uint32_t scheduled_comp0_cb;   // scheduled compare0 call back
-static uint32_t scheduled_comp1_cb;   // scheduled compare1 callback
 static uint32_t scheduled_uf_cb;      // scheduled underflow callback
 
 
@@ -119,17 +117,11 @@ void letimer_pwm_open(LETIMER_TypeDef *letimer, APP_LETIMER_PWM_TypeDef *app_let
 	// Enable Interrupts
   NVIC_EnableIRQ(LETIMER0_IRQn);    // enable NVIC IRQ for LETIMER0
 
-	// enable comp1 interrupts
-	letimer->IEN |= _LETIMER_IEN_COMP1_MASK;
-
 	// enable underflow interrupts
 	letimer->IEN |= _LETIMER_IEN_UF_MASK;
 
-	/* Configure scheduled callbacks */
-	scheduled_comp0_cb = app_letimer_struct->comp0_cb;
-	scheduled_comp1_cb = app_letimer_struct->comp1_cb;
+	// set schedule underflow callback
 	scheduled_uf_cb = app_letimer_struct->uf_cb;
-
 
 	// if running already ...
   if(letimer->STATUS & LETIMER_STATUS_RUNNING)
@@ -210,22 +202,6 @@ void LETIMER0_IRQHandler(void)
 
   // clear LETIMER0 interrupt flag;
   LETIMER0->IFC = int_flag;
-
-  // handle COMP0 interrupt source
-  if(int_flag & LETIMER_IF_COMP0)
-  {
-      add_scheduled_event(scheduled_comp0_cb);
-      // assert to ensure flag is cleared
-      EFM_ASSERT(!(LETIMER0->IF & LETIMER_IF_COMP0));
-  }
-
-  // handle COMP1 interrupt source
-  if(int_flag & LETIMER_IF_COMP1)
-  {
-      add_scheduled_event(scheduled_comp1_cb);
-      // assert to ensure flag is cleared
-      EFM_ASSERT(!(LETIMER0->IF & LETIMER_IF_COMP1));
-  }
 
   // handle UF interrupt source
   if(int_flag & LETIMER_IF_UF)

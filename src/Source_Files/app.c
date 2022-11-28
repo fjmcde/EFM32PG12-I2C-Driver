@@ -92,9 +92,7 @@ void app_letimer_pwm_open(float period, float act_period,
   letimer_pwm.period = period;
   letimer_pwm.active_period = act_period;
   letimer_pwm.comp0_irq_enable = false;
-  letimer_pwm.comp0_cb = LETIMER0_COMP0_CB;
-  letimer_pwm.comp1_irq_enable = true;
-  letimer_pwm.comp1_cb = LETIMER0_COMP1_CB;
+  letimer_pwm.comp1_irq_enable = false;
   letimer_pwm.uf_irq_enable = true;
   letimer_pwm.uf_cb = LETIMER0_UF_CB;
 
@@ -117,122 +115,10 @@ void scheduled_letimer0_uf_cb(void)
   remove_scheduled_event(LETIMER0_UF_CB);
 
   // write to user register 1 on Si7021 to change measurement resolution
-  si7021_i2c_write(I2C0, write_reg1, measure_res_RH8_T12, SI7021_WRITE_REG_CB);
+  si7021_i2c_write(I2C0, writeReg1, measureResRH8_T12, SI7021_WRITE_REG_CB);
 
   // read relative humidity using Si7021
-  si7021_i2c_read(I2C0, measure_RH_NHMM, false, SI7021_HUM_READ_CB);
-}
-
-
-/***************************************************************************//**
- * @brief
- *   Handles the scheduling of the letimer0 comp0 call back
- *
- * @note
- *   Currently disabled, as the comp0 interrupt is disabled. The Assert
- *   statement is for debugging. If the assert is reached the configuration
- *   is incorrect.
- *
- * @details
- *   Removes the comp0 call back event from the scheduler then asserts that
- *   the event has been cleared
- ******************************************************************************/
-void scheduled_letimer0_comp0_cb(void)
-{
-  // the LETIMER0 comp0 interrupt is disabled; so if we get here we know that
-  // we configured the LETIMER0 incorrectly. FOR DEBUGGING PURPOSES ONLY.
-  // REMOVE ASSERT IF INTERRUPT ENABLED.
-  EFM_ASSERT(false);
-
-  // added so that we can handle the callback once enabled
-  // uncomment next two lines when enabled
-  //remove_scheduled_event(LETIMER0_COMP0_CB);
-  //EFM_ASSERT(!(get_scheduled_events() & LETIMER0_COMP0_CB));
-}
-
-
-/***************************************************************************//**
- * @brief
- *   Handles the scheduling of the letimer0 comp1 call back
- *
- * @details
- *   Removes the comp1 call back event from the scheduler then
- *   asserts that the event has been cleared
- ******************************************************************************/
-void scheduled_letimer0_comp1_cb(void)
-{
-  remove_scheduled_event(LETIMER0_COMP1_CB);
-  EFM_ASSERT(!(get_scheduled_events() & LETIMER0_COMP1_CB));
-}
-
-
-/***************************************************************************//**
- * @brief
- *   Handles the scheduling of the GPIO Odd IRQ (BTN1) call back
- *
- * @details
- *  Removes the triggering event from the scheduler and unblocked the
- *  current energy mode. If the current blocked EM is less than EM4,
- *  increment the current energy mode. Otherwise return EM0 (overflow)
- ******************************************************************************/
-void scheduled_gpio_odd_irq_cb(void)
-{
-  // remove scheduled event from scheduler
-  remove_scheduled_event(GPIO_ODD_IRQ_CB);
-
-  // assert to ensure removed
-  EFM_ASSERT(!(get_scheduled_events() & GPIO_ODD_IRQ_CB));
-
-  // local variable to store the current blocked energy mode
-  uint32_t current_block_em = current_block_energy_mode();
-
-  // unblock current energy mode
-  sleep_unblock_mode(current_block_em);
-
-  if(current_block_em < EM4)
-  {
-    sleep_block_mode(++current_block_em);
-  }
-  else
-  {
-      sleep_block_mode(EM0);
-  }
-}
-
-
-/***************************************************************************//**
- * @brief
- *   Handles the scheduling of the GPIO Even IRQ (BTN1) call back
- *
- * @details
- *  Removes the triggering event from the scheduler. If the EM is zero,
- *  block EM4 (underflow) otherwise  decrement the current block energy mode.
- ******************************************************************************/
-void scheduled_gpio_even_irq_cb(void)
-{
-  // remove event from scheduler
-  remove_scheduled_event(GPIO_EVEN_IRQ_CB);
-
-  // assert to ensure removed
-  EFM_ASSERT(!(get_scheduled_events() & GPIO_EVEN_IRQ_CB));
-
-  // local variable to store the current blocked energy mode
-  uint32_t current_block_em = current_block_energy_mode();
-
-  // unblock current energy mode
-  sleep_unblock_mode(current_block_em);
-
-  // if current block energy mode is > EM0 ...
-  if(current_block_em > EM0)
-  {
-      // ... decrement the current block
-      sleep_block_mode(--current_block_em);
-  }
-  else
-  {
-      // ... else block EM4
-      sleep_block_mode(EM4);
-  }
+  //si7021_i2c_read(I2C0, measureRH_NHMM, false, SI7021_HUM_READ_CB);
 }
 
 
@@ -268,7 +154,7 @@ void scheduled_si7021_hum_read_cb(void)
   }
 
   // read temperature from previous previous RH measurement
-  si7021_i2c_read(I2C0, read_T_from_prev_RH, false, SI7021_TEMP_READ_CB);
+  si7021_i2c_read(I2C0, MeasureTFromPrevRH, false, SI7021_TEMP_READ_CB);
 }
 
 
@@ -284,23 +170,26 @@ void scheduled_si7021_temp_read_cb(void)
 }
 
 
-void scheduled_si7021_write_reg(void)
+void scheduled_si7021_write_reg_cb(void)
 {
   remove_scheduled_event(SI7021_WRITE_REG_CB);
 
   EFM_ASSERT(!(get_scheduled_events() & SI7021_WRITE_REG_CB));
 
-  si7021_i2c_read(I2C0, read_reg1, false, SI7021_READ_RED_CB);
+  si7021_i2c_read(I2C0, readReg1, false, SI7021_READ_REG_CB);
 }
 
 
-void scheduled_si7021_read_reg(void)
+void scheduled_si7021_read_reg_cb(void)
 {
-  remove_scheduled_event(SI7021_READ_RED_CB);
+  remove_scheduled_event(SI7021_READ_REG_CB);
 
-  EFM_ASSERT(!(get_scheduled_events() & SI7021_READ_RED_CB));
+  EFM_ASSERT(!(get_scheduled_events() & SI7021_READ_REG_CB));
 
   uint32_t data = si7021_read_user_reg();
 
   printf("Data in User Register 1: %lu", data);
+
+  // read relative humidity using Si7021
+  si7021_i2c_read(I2C0, measureRH_NHMM, false, SI7021_HUM_READ_CB);
 }

@@ -37,8 +37,7 @@
 /* I2C State Machine transit buffer [txdata] */
 #define I2C_ADDR_RW_SHIFT     1                           // Left shift addr before or'ing r/w bit
 /* I2C data bytes [data] */
-#define SHIFT_MSBYTE          0X08                        // Left shift a byte in data register to accept another byte as LSB
-#define READ_2_BYTES          2                           // number of bytes expected for a read
+#define SHIFT_MSBYTE          8                           // Left shift a byte in data register to accept another byte as LSB
 /* I2C Energy Modes */
 #define I2C_EM_BLOCK          EM2                         // I2C Cannot go below EM2
 /* I2C Timer Delays */
@@ -49,23 +48,24 @@
 #define I2C_BYTES_REQ_READ_2  2
 #define I2C_BYTES_REQ_READ_3  3
 
+
 //***********************************************************************************
 // enums
 //***********************************************************************************
 typedef enum
 {
-  i2c_write_bit             = 0x00, /* Write bit for header packet (AN10216-01 I2C Manual) */
-  i2c_read_bit              = 0x01  /* Read bit for header packet (AN10216-01 I2C Manual) */
+  i2cWriteBit             = 0x00, /* Write bit for header packet (AN10216-01 I2C Manual) */
+  i2cReadBit              = 0x01  /* Read bit for header packet (AN10216-01 I2C Manual) */
 }I2C_RW_Typedef;
 
 
 typedef enum
 {
-  req_res,          /* Request resource: Send 7-bit slave addr + r/w-bit (TRM 16.3.7.6: 0x57) */
-  command_tx,       /* Transmit command to device (TRM 16.3.7.6: 0x97)*/
-  data_req,         /* Send data request  (TRM 16.3.7.6: 0xD7) */
-  data_rx,          /* Data received (TRM 16.3.7.6)*/
-  m_stop,           /* STOP bit sent */
+  reqRes,          /* Request resource: Send 7-bit slave addr + r/w-bit (TRM 16.3.7.6: 0x57) */
+  commandTx,       /* Transmit command to device (TRM 16.3.7.6: 0x97)*/
+  dataReq,         /* Send data request  (TRM 16.3.7.6: 0xD7) */
+  dataRx,          /* Data received (TRM 16.3.7.6)*/
+  mStop,           /* STOP bit sent */
 }I2C_STATES_Typedef;
 
 //***********************************************************************************
@@ -98,7 +98,7 @@ typedef struct
     volatile const uint32_t      *rxdata;                 // pointer to I2C receiver buffer address
     volatile uint32_t            *txdata;                 // pointer to I2C transmit buffer address
     volatile uint16_t            *data;                   // pointer to static data variable
-    uint8_t                       tx_cmd;                 // command to transmit over I2C
+    uint32_t                      tx_cmd;                 // command to transmit over I2C
     uint32_t                      bytes_req;              // number of bytes requested
     uint32_t                      num_bytes;              // number of bytes remaining
     uint32_t                      i2c_cb;                 // I2C call back event to request upon completion of I2C operation

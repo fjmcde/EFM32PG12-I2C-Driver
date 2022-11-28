@@ -24,6 +24,7 @@ static volatile uint16_t write_data;
 //***********************************************************************************
 // static/private functions
 //***********************************************************************************
+static uint8_t si7021_num_bytes(SI7021_CMD_Typedef cmd, bool checksum);
 
 
 //***********************************************************************************
@@ -96,19 +97,13 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
 
   uint8_t bytes_req;
 
-  if(checksum)
-  {
-     bytes_req = SI7021_REQ_3_BYTES;
-  }
-  else
-  {
-     bytes_req = SI7021_REQ_2_BYTES;
-  }
+  // determine how many bytes to request
+  bytes_req = si7021_num_bytes(cmd, checksum);
 
   // initialize local I2C state machine for i2c_start()
   volatile I2C_SM_STRUCT i2c_start_sm;
   i2c_start_sm.I2Cn = i2c;
-  i2c_start_sm.curr_state = req_res;
+  i2c_start_sm.curr_state = reqRes;
   i2c_start_sm.slave_addr = SI7021_ADDR;
   i2c_start_sm.read_operation = true;
   i2c_start_sm.rxdata = &i2c->RXDATA;
@@ -119,13 +114,14 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
   i2c_start_sm.num_bytes = bytes_req;
   i2c_start_sm.i2c_cb = si7021_cb;
 
+  // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
 
   // start I2C protocol
   i2c_init_sm(&i2c_start_sm);
 
   // transmit start
-  i2c_tx_req(&i2c_start_sm, i2c_write_bit);
+  i2c_tx_req(&i2c_start_sm, i2cWriteBit);
 }
 
 
@@ -153,24 +149,25 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, ui
   // initialize local I2C state machine for i2c_start()
    volatile I2C_SM_STRUCT i2c_start_sm;
    i2c_start_sm.I2Cn = i2c;
-   i2c_start_sm.curr_state = req_res;
+   i2c_start_sm.curr_state = reqRes;
    i2c_start_sm.slave_addr = SI7021_ADDR;
    i2c_start_sm.read_operation = false;
    i2c_start_sm.rxdata = &i2c->RXDATA;
    i2c_start_sm.txdata = &i2c->TXDATA;
    i2c_start_sm.data = &write_data;
-   i2c_start_sm.tx_cmd = ((uint8_t) cmd);
+   i2c_start_sm.tx_cmd = cmd;
    i2c_start_sm.bytes_req = SI7021_TX_1_BYTE;
    i2c_start_sm.num_bytes = SI7021_TX_1_BYTE;
    i2c_start_sm.i2c_cb = si7021_cb;
 
+   // exit core critical to allow interrupts
    CORE_EXIT_CRITICAL();
 
    // start I2C protocol
    i2c_init_sm(&i2c_start_sm);
 
    // transmit start
-   i2c_tx_req(&i2c_start_sm, i2c_write_bit);
+   i2c_tx_req(&i2c_start_sm, i2cWriteBit);
 }
 
 
@@ -226,4 +223,36 @@ uint32_t si7021_read_user_reg(void)
   CORE_EXIT_CRITICAL();
 
   return data;
+}
+
+
+uint8_t si7021_num_bytes(SI7021_CMD_Typedef cmd, bool checksum)
+{
+  uint8_t bytes_req;
+
+  switch(cmd)
+  {
+    case readReg1:
+      bytes_req = SI7021_REQ_1_BYTE;
+      break;
+    case measureRH_NHMM:
+      bytes_req = SI7021_REQ_2_BYTES;
+      break;
+    case MeasureTFromPrevRH:
+      bytes_req = SI7021_REQ_2_BYTES;
+      break;
+    default:
+      // Not all of the enumerated Si7021 commands have functionality
+      // if this default case is reached then the desired command
+      // functionality is not yet completed
+      EFM_ASSERT(false);
+      break;
+  }
+
+  if(checksum)
+  {
+      bytes_req++;
+  }
+
+  return bytes_req;
 }

@@ -21,6 +21,7 @@
 #include "i2c.h"
 #include "HW_delay.h"
 
+
 //***********************************************************************************
 // defined macros
 //***********************************************************************************
@@ -29,6 +30,7 @@
 #define SHTC3_PWR_UP_TIME_MAX     240                 // Device maximum power-up time (in micro-seconds)
 #define SHTC3_SCL_CLK_FREQ_FM     I2C_FREQ_FAST_MAX   // Frequency of SCL clock in fast-mode (device max is 400kHz)
 #define SHTC3_REF_FREQ            0                   // Set to zero to use I2C frequency
+
 
 //***********************************************************************************
 // enums
@@ -49,16 +51,14 @@ typedef enum
   read_rh_first_nm        = 0x58E0, /* Read relative humidity first; normal mode; clock stretching disabled */
   read_rh_first_lpm       = 0x401A, /* Read relative humidity first; low power mode; clock stretching disabled */
   /* read out commands */
-  read_id_reg             = 0xEFC8  /* Read-out of the ID register to verify the presence of and communication with the SHTC3 */
+  read_id_reg             = 0xEFC8  /* Read ID register to verify the presence of and communication with the SHTC3 */
 }SHTC3_I2C_COMMAND_Typedef;
+
 
 //***********************************************************************************
 // structs
 //***********************************************************************************
-typedef struct
-{
 
-}SHTC3_OPEN_STRUCT;
 
 //***********************************************************************************
 // function prototypes
