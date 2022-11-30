@@ -4,9 +4,9 @@
  * @author
  *   Frank McDermott
  * @date
- *   9/8/2022
+ *   11/29/2022
  * @brief
- *   Contains all of the scheduler driver functionality
+ *   Scheduler driver code
  ******************************************************************************/
 
 //*******************************************************
@@ -18,7 +18,7 @@
 //*******************************************************
 // static/private data
 //*******************************************************
-static uint32_t event_scheduled;    // tracks scheduled events
+static uint32_t event_scheduled;
 
 
 //***********************************************************************************

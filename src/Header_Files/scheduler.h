@@ -20,7 +20,7 @@
 //*******************************************************
 // defined macros
 //*******************************************************
-#define CLEAR_SCHEDULED_EVENTS           (uint32_t)(0x00); // mask to clear all scheduled events
+#define CLEAR_SCHEDULED_EVENTS           (uint32_t)(0x00) // mask to clear all scheduled events
 
 
 //***********************************************************************************

@@ -1,8 +1,13 @@
-/*
- * shtc3.c
- *
-
- */
+/***************************************************************************//**
+ * @file
+ *   shtc3.c
+ * @author
+ *   Frank McDermott
+ * @date
+ *   11/29/2022
+ * @brief
+ *   SHTC3 Driver
+ ******************************************************************************/
 
 //***********************************************************************************
 // included header file
@@ -23,12 +28,29 @@ static volatile float shtc3_temp;
 // static/global functions
 //***********************************************************************************
 static bool check_lock(SHTC3_CMD_Typedef cmd);
-static float shtc3_calc_rh(uint16_t data);
-static float shtc3_calc_temp(uint16_t data);
+static uint16_t shtc3_calc_rh(uint16_t data);
+static uint16_t shtc3_calc_temp(uint16_t data);
 
 //***********************************************************************************
 // function definitions
 //***********************************************************************************
+
+
+/******************************************************************************
+ **************************** PERIPHERAL FUNCTIONS ****************************
+ ******************************************************************************/
+
+/***************************************************************************//**
+ * @brief
+ *  Opens SHTC3 peripheral.
+ *
+ * @details
+ *  Opens the I2C peripheral as well as initializes and puts the SHTC3
+ *  to sleep.
+ *
+ * @param[in] i2c
+ *  I2C peripheral to use {Can use I2C0 or I2C1).
+ ******************************************************************************/
 void shtc3_open(I2C_TypeDef *i2c)
 {
   I2C_OPEN_STRUCT app_i2c_open;
@@ -65,6 +87,27 @@ void shtc3_open(I2C_TypeDef *i2c)
 }
 
 
+/******************************************************************************
+ **************************** READ/WRITE FUNCTIONS ****************************
+ ******************************************************************************/
+
+
+/***************************************************************************//**
+ * @brief
+ *  Starts a write transaction over the I2C bus.
+ *
+ * @details
+ *  initialized an I2C state machine and transmits a write request packet.
+ *
+ * @param[in] i2c
+ *  I2C peripheral to use {Can use I2C0 or I2C1).
+ *
+ * @param[in] cmd
+ *  Enumerated command for transmit to SHTC3.
+ *
+ * @param[in] shtc3_cb
+ *  Callback event to schedule.
+ ******************************************************************************/
 void shtc3_write(I2C_TypeDef *i2c, SHTC3_CMD_Typedef cmd, uint32_t shtc3_cb)
 {
   // atomic operation
@@ -140,6 +183,24 @@ void shtc3_read(I2C_TypeDef *i2c, bool checksum, uint32_t shtc3_cb)
 }
 
 
+/******************************************************************************
+ ***************************** PRIVATE FUNCTIONS ******************************
+ ******************************************************************************/
+
+
+/***************************************************************************//**
+ * @brief
+ *  Parses the SHTC3 measurement data.
+ *
+ * @details
+ *  The SHTC3 transmits raw measured relative humidity and temperature
+ *  codes in a series of four 8-bit packets, for a total of 32-bits of data.
+ *  This data is stores in a single unsigned-32-bit integer and must be
+ *  split into separate 16-bit values to separate temperature data from RH data.
+ *
+ *  This private function is used after one of the enumerated "relative humidity
+ *  first" commands. The 2-MSBytes are RH data; the 2-LSBytes are temperature data.
+ ******************************************************************************/
 void shtc3_parse_measurement_data_RH_first(void)
 {
   // manipulate binary shift truncation to split
@@ -158,7 +219,14 @@ void shtc3_parse_measurement_data_RH_first(void)
 }
 
 
-float shtc3_calc_rh(uint16_t data)
+/***************************************************************************//**
+ * @brief
+ *  Converts a raw relative humidity measurement code to percent humidity
+ *
+ * @details
+ *  Stores calculated data in private data member for easy access.
+ ******************************************************************************/
+uint16_t shtc3_calc_rh(uint16_t data)
 {
   // make atomic by disallowing interrupts
   CORE_DECLARE_IRQ_STATE;
@@ -173,7 +241,14 @@ float shtc3_calc_rh(uint16_t data)
 }
 
 
-float shtc3_calc_temp(uint16_t data)
+/***************************************************************************//**
+ * @brief
+ *  Converts a raw temperature measurement code to temperature (Celsius)
+ *
+ * @details
+ *  Stores calculated data in private data member for easy access.
+ ******************************************************************************/
+uint16_t shtc3_calc_temp(uint16_t data)
 {
   // make atomic by disallowing interrupts
   CORE_DECLARE_IRQ_STATE;
@@ -186,6 +261,97 @@ float shtc3_calc_temp(uint16_t data)
 
   return temp;
 }
+
+
+/***************************************************************************//**
+ * @brief
+ *  Private function to store percent relative humidity data in private
+ *  data member.
+ *
+ * @details
+ *  Stores calculated data in private data member for easy access.
+ ******************************************************************************/
+void shtc3_set_rh(float rh)
+{
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  shtc3_rh = rh;
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *  Private function to store temperature (Celsius) data in private
+ *  data member.
+ *
+ * @details
+ *  Stores calculated data in private data member for easy access.
+ ******************************************************************************/
+void shtc3_set_temp(float temp)
+{
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  shtc3_temp = temp;
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+}
+
+
+
+/***************************************************************************//**
+ * @brief
+ *  Private function which determines whether the I2C state machine requires
+ *  locking.
+ *
+ * @details
+ *  Locking refers to whether or not the mStop state, in the state machine,
+ *  is allows to reset the bus. Locking is usually reserved for transactions
+ *  which require more than one request.
+ *
+ * @param[in] cmd
+ *  Enumerated command to determine whether the I2C state machine requires
+ *  locking.
+ *
+ * @param[out] lock
+ *  Returns whether or not a command requires locking the state machine.
+ ******************************************************************************/
+bool check_lock(SHTC3_CMD_Typedef cmd)
+{
+  bool lock;
+
+  switch(cmd)
+  {
+    case sleep:
+      lock = false;
+      break;
+    case wakeup:
+      lock = true;
+      break;
+    case readRHFirst_LPM:
+      lock = true;
+      break;
+    default:
+      // if default case is reached, the command has not
+      // yet been implemented.
+      EFM_ASSERT(false);
+      break;
+  }
+
+  return lock;
+}
+
+
+/******************************************************************************
+ ************************* PUBLIC ACCESSOR FUNCTIONS **************************
+ ******************************************************************************/
 
 
 float shtc3_get_rh()
@@ -215,56 +381,4 @@ float shtc3_get_temp()
   CORE_EXIT_CRITICAL();
 
   return temp;
-}
-
-
-void shtc3_set_rh(float rh)
-{
-  // atomic operation
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
-  shtc3_rh = rh;
-
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
-}
-
-
-void shtc3_set_temp(float temp)
-{
-  // atomic operation
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
-  shtc3_temp = temp;
-
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
-}
-
-
-bool check_lock(SHTC3_CMD_Typedef cmd)
-{
-  bool lock;
-
-  switch(cmd)
-  {
-    case sleep:
-      lock = false;
-      break;
-    case wakeup:
-      lock = true;
-      break;
-    case readRHFirst_LPM:
-      lock = true;
-      break;
-    default:
-      // if default case is reached, the command has not
-      // yet been implemented.
-      EFM_ASSERT(false);
-      break;
-  }
-
-  return lock;
 }

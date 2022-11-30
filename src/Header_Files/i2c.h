@@ -59,6 +59,7 @@ typedef enum
 }I2C_RW_Typedef;
 
 
+//
 typedef enum
 {
   reqRes,          /* Request resource: Send 7-bit slave addr + r/w-bit (TRM 16.3.7.6: 0x57) */
@@ -71,7 +72,7 @@ typedef enum
 //***********************************************************************************
 // structs
 //***********************************************************************************
-// I2C struct for use in opening the I2C peripheral
+// struct for use in opening the I2C peripheral
 typedef struct
 {
   bool                  enable;   // enable I2C peripheral when init complete
@@ -86,8 +87,8 @@ typedef struct
 }I2C_OPEN_STRUCT;
 
 
-// I2C struct for managing the I2C state machine. Instantiated as a static
-// data struct in i2c.c
+// struct for managing the I2C state machine. Instantiated as a pair
+// of private data members (one for I2C0 and one for I2C1)
 typedef struct
 {
     I2C_TypeDef                  *I2Cn;                   // pointer to I2C peripheral (I2C0 or I2C1)

@@ -40,6 +40,13 @@ static void app_letimer_pwm_open(float period, float act_period,
 //***********************************************************************************
 // function definitions
 //***********************************************************************************
+
+
+/******************************************************************************
+ **************************** PERIPHERAL FUNCTIONS ****************************
+ ******************************************************************************/
+
+
 /***************************************************************************//**
  * @brief
  *   Sets up the application-specific peripherals, schedulers, and timers
@@ -114,6 +121,11 @@ void app_letimer_pwm_open(float period, float act_period,
   // open letimer for PWM mode
   letimer_pwm_open(LETIMER0, &letimer_pwm);
 }
+
+
+/******************************************************************************
+ ***************************** CALLBACK FUNCTIONS *****************************
+ ******************************************************************************/
 
 
 /***************************************************************************//**
@@ -202,7 +214,7 @@ void scheduled_si7021_write_reg_cb(void)
   si7021_i2c_read(I2C0, readReg1, false, SI7021_READ_REG_CB);
 
   // store user register settings
-  si7021_user_reg = si7021_get_user_reg();
+  si7021_user_reg = si7021_store_user_reg();
 }
 
 

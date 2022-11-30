@@ -129,7 +129,7 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, ui
 /* Conversion functions */
 void si7021_parse_measurement_data(void);
 /* Accessor member functions */
-uint8_t si7021_get_user_reg(void);
+uint8_t si7021_store_user_reg(void);
 float si7021_get_rh();
 float si7021_get_temp();
 

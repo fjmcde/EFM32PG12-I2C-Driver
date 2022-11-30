@@ -4,7 +4,7 @@
  * @author
  *   Frank McDermott
  * @date
- *   11/06/2022
+ *   11/29/2022
  * @brief
  *   Si7021 Driver
  ******************************************************************************/
@@ -13,7 +13,6 @@
 // included header file
 //***********************************************************************************
 #include "si7021.h"
-
 
 //***********************************************************************************
 // static/private data
@@ -24,19 +23,24 @@ static volatile uint16_t crc_data;
 static volatile float si7021_rh;
 static volatile float si7021_temp;
 static volatile uint8_t si7021_user_reg_data;
-//static volatile uint8_t si7021_heater_reg_data;
-
 
 //***********************************************************************************
 // static/private functions
 //***********************************************************************************
 static uint8_t req_bytes(uint8_t cmd);
-static float si7021_calc_RH(void);
-static float si7021_calc_temp(void);
+static void si7021_calc_RH(void);
+static void si7021_calc_temp(void);
 
 //***********************************************************************************
 // function definitions
 //***********************************************************************************
+
+
+/******************************************************************************
+ **************************** PERIPHERAL FUNCTIONS ****************************
+ ******************************************************************************/
+
+
 /***************************************************************************//**
  * @brief
  *  Opens the Si7021 Temperature & Humidity Sensor I2C peripheral
@@ -88,18 +92,28 @@ void si7021_i2c_open(I2C_TypeDef *i2c,
   si7021_i2c_write(I2C0, cmd, ctrl, SI7021_WRITE_REG_CB);
 }
 
+
+/******************************************************************************
+ ************************ PUBLIC READ/WRITE FUNCTIONS *************************
+ ******************************************************************************/
+
+
 /***************************************************************************//**
  * @brief
- *  Sends a read command to the Si7021 over I2C
+ *  Starts a read transaction over I2C bus.
  *
  * @details
- *  Currently hard coded to read Relative Humidity (No Hold Master Mode)
+ *  Initializes an I2C state machine and transmits the initial
+ *  request packet.
  *
  * @param[in] i2c
- *  Desired I2Cn peripheral (either I2C0 or I2C1)
+ *  Desired I2Cn peripheral (either I2C0 or I2C1).
+ *
+ * @param[in] cmd
+ *  Enumerated command to transmit later in the state machine.
  *
  * @param[in] si7021_cb
- *  Callback event to be scheduled after read operation is complete
+ *  Callback event to be scheduled after read transaction is complete.
  ******************************************************************************/
 void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, uint32_t si7021_cb)
 {
@@ -110,6 +124,7 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
   // reset read_result
   read_result = SI7021_RESET_READ_RESULT;
 
+  // determine how many bytes to request
   uint8_t bytes = req_bytes(cmd);
 
   // initialize local I2C state machine
@@ -143,16 +158,22 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
 
 /***************************************************************************//**
  * @brief
- *  Sends a read write to the Si7021 over I2C
+ *  Starts a write transaction over I2C bus.
  *
  * @details
- *  NOT YET WORKING
+ *
  *
  * @param[in] i2c
- *  Desired I2Cn peripheral (either I2C0 or I2C1)
+ *  Desired I2Cn peripheral (either I2C0 or I2C1).
+ *
+ * @param[in] cmd
+ *  Enumerated command to transmit later in the state machine.
+ *
+ * @param[in] ctrl
+ *  Data to write to the Si7021's user 1 register.
  *
  * @param[in] si7021_cb
- *  Callback event to be scheduled after write operation is complete
+ *  Callback event to be scheduled after write transaction is complete
  ******************************************************************************/
 void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, uint32_t si7021_cb)
 {
@@ -188,55 +209,78 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, ui
 }
 
 
+/******************************************************************************
+ ***************************** PRIVATE FUNCTIONS ******************************
+ ******************************************************************************/
+
+
+/***************************************************************************//**
+ * @brief
+ *  Parses the raw measurement data received from the Si7021.
+ *
+ * @details
+ *  Calls private functions to calculates percent relative humidity
+ *  and temperature Celsius.
+ ******************************************************************************/
 void si7021_parse_measurement_data(void)
 {
   // atomic operation
   CORE_DECLARE_IRQ_STATE;
   CORE_ENTER_CRITICAL();
 
-  float rh = si7021_calc_RH();
-  float temp = si7021_calc_temp();
-
-  si7021_rh = rh;
-  si7021_temp = temp;
+  si7021_calc_RH();
+  si7021_calc_temp();
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
 }
 
+
 /***************************************************************************//**
  * @brief
- *  Converts a Relative Humidity measurement code to a percent humidity
- *  per Si7021-A20 TRM: Section 5.1.1
+ *  Converts a raw relative humidity measurement code to percent humidity
+ *  (Si7021-A20 TRM: Section 5.1.1)
  *
  * @details
- *  Atomic function due to accessing static variable
+ *  Stores calculated data in private data member for easy access.
  ******************************************************************************/
-float si7021_calc_RH(void)
+void si7021_calc_RH(void)
 {
   // convert the stored RH code to percent humidity (Si7021-A20: 5.1.1)
   float rh = ((125 * (float)read_result) / 65536) - 6;
 
   // update static variable
   si7021_rh = rh;
-
-  return rh;
 }
 
 
-float si7021_calc_temp(void)
+/***************************************************************************//**
+ * @brief
+ *  Converts a raw temperature measurement code to temperature (Celsius).
+ *  (Si7021-A20 TRM: Section 5.1.1)
+ *
+ * @details
+ *  Stores calculated data in private data member for easy access.
+ ******************************************************************************/
+void si7021_calc_temp(void)
 {
   // convert stored temperature code to degrees (°C) (SI7021-A20: 5.1.2)
   float temp = ((175.71 * (float)read_result) / 65536) - 46.85;
 
   // update static variable
   si7021_temp = temp;
-
-  return temp;
 }
 
 
-uint8_t si7021_get_user_reg(void)
+/***************************************************************************//**
+ * @brief
+ *  Stores user register data.
+ *
+ * @details
+ *  Stores results of user register 1 read transaction in private data
+ *  member, then returns it for visibility in the application layer.
+ ******************************************************************************/
+uint8_t si7021_store_user_reg(void)
 {
   // make atomic by disallowing interrupts
   CORE_DECLARE_IRQ_STATE;
@@ -251,6 +295,24 @@ uint8_t si7021_get_user_reg(void)
 }
 
 
+/***************************************************************************//**
+ * @brief
+ *  Determines how many bytes an enumerated command should expect.
+ *
+ * @details
+ *  Determines how many bytes an enumerated command should expect, for use
+ *  in I2C state machine initialization.
+ *
+ *  Note:
+ *  When additional command functionality is built, cases will be add
+ *  to switch statement.
+ *
+ *  @param[in] cmd
+ *   8-bit command used to determine how many bytes to expect.
+ *
+ *  @param[out] bytes
+ *   Returns number of bytes a command should expect
+ ******************************************************************************/
 uint8_t req_bytes(uint8_t cmd)
 {
   uint8_t bytes;
@@ -280,6 +342,21 @@ uint8_t req_bytes(uint8_t cmd)
 }
 
 
+/******************************************************************************
+ ************************* PUBLIC ACCESSOR FUNCTIONS **************************
+ ******************************************************************************/
+
+
+/***************************************************************************//**
+ * @brief
+ *  Accessor function for privately stored relative humidity data.
+ *
+ * @details
+ *  Provides the application layer with read access to private data members.
+ *
+ * @param[out]
+ *  Returns relative humidity data.
+ ******************************************************************************/
 float si7021_get_rh()
 {
   // atomic operation
@@ -294,6 +371,17 @@ float si7021_get_rh()
     return rh;
 }
 
+
+/***************************************************************************//**
+ * @brief
+ *  Accessor function for privately stored temperature data.
+ *
+ * @details
+ *  Provides the application layer with read access to private data members.
+ *
+ * @param[out]
+ *  Returns temperature data.
+ ******************************************************************************/
 float si7021_get_temp()
 {
   // atomic operation
