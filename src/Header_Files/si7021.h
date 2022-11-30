@@ -127,7 +127,8 @@ void si7021_i2c_open(I2C_TypeDef *i2c,
 void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, uint32_t si7021_cb);
 void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, uint32_t si7021_cb);
 /* Conversion functions */
-void si7021_parse_measurement_data(void);
+void si7021_parse_RH_data(void);
+void si7021_parse_temp_data(void);
 /* Accessor member functions */
 uint8_t si7021_store_user_reg(void);
 float si7021_get_rh();

@@ -17,9 +17,9 @@
 //***********************************************************************************
 // static/private data
 //***********************************************************************************
-static volatile uint32_t read_result;
-static volatile uint32_t write_data;
-static volatile uint16_t crc_data;
+static volatile uint32_t si7021_read_result;
+static volatile uint32_t si7021_write_data;
+static volatile uint16_t si7021_crc_data;
 static volatile float si7021_rh;
 static volatile float si7021_temp;
 static volatile uint8_t si7021_user_reg_data;
@@ -122,7 +122,7 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
   CORE_ENTER_CRITICAL();
 
   // reset read_result
-  read_result = SI7021_RESET_READ_RESULT;
+  si7021_read_result = SI7021_RESET_READ_RESULT;
 
   // determine how many bytes to request
   uint8_t bytes = req_bytes(cmd);
@@ -135,8 +135,8 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
   i2c_start_sm.read_operation = true;
   i2c_start_sm.rxdata = &i2c->RXDATA;
   i2c_start_sm.txdata = &i2c->TXDATA;
-  i2c_start_sm.data = &read_result;
-  i2c_start_sm.crc_data = &crc_data;
+  i2c_start_sm.data = &si7021_read_result;
+  i2c_start_sm.crc_data = &si7021_crc_data;
   i2c_start_sm.checksum = checksum;
   i2c_start_sm.tx_cmd = ((uint8_t)cmd);
   i2c_start_sm.bytes_req = bytes;
@@ -181,7 +181,7 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, ui
   CORE_DECLARE_IRQ_STATE;
   CORE_ENTER_CRITICAL();
 
-  write_data = ctrl;
+  si7021_write_data = ctrl;
 
   // initialize local I2C state machine for i2c_start()
   volatile I2C_SM_STRUCT i2c_start_sm;
@@ -191,7 +191,7 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, ui
   i2c_start_sm.read_operation = false;
   i2c_start_sm.rxdata = &i2c->RXDATA;
   i2c_start_sm.txdata = &i2c->TXDATA;
-  i2c_start_sm.data = &write_data;
+  i2c_start_sm.data = &si7021_write_data;
   i2c_start_sm.tx_cmd = cmd;
   i2c_start_sm.bytes_tx = SI7021_TX_1_BYTE;
   i2c_start_sm.num_bytes = SI7021_TX_1_BYTE;
@@ -216,24 +216,44 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, ui
 
 /***************************************************************************//**
  * @brief
- *  Parses the raw measurement data received from the Si7021.
+ *  Parses the raw relative humidity measurement code received from the Si7021.
  *
  * @details
- *  Calls private functions to calculates percent relative humidity
- *  and temperature Celsius.
+ *  Calls private functions to calculate percent relative humidity.
  ******************************************************************************/
-void si7021_parse_measurement_data(void)
+void si7021_parse_RH_data(void)
 {
   // atomic operation
   CORE_DECLARE_IRQ_STATE;
   CORE_ENTER_CRITICAL();
 
   si7021_calc_RH();
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *  Parses the raw temperature measurement code received from the Si7021.
+ *
+ * @details
+ *  Calls private functions to calculate temperature Celsius.
+ ******************************************************************************/
+void si7021_parse_temp_data(void)
+{
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
   si7021_calc_temp();
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
 }
+
+
 
 
 /***************************************************************************//**
@@ -247,10 +267,13 @@ void si7021_parse_measurement_data(void)
 void si7021_calc_RH(void)
 {
   // convert the stored RH code to percent humidity (Si7021-A20: 5.1.1)
-  float rh = ((125 * (float)read_result) / 65536) - 6;
+  float rh = ((125 * (((float)si7021_read_result) / 65536)) - 6);
 
   // update static variable
   si7021_rh = rh;
+
+  // delay to avoid RMW errors
+  timer_delay(80);
 }
 
 
@@ -265,10 +288,13 @@ void si7021_calc_RH(void)
 void si7021_calc_temp(void)
 {
   // convert stored temperature code to degrees (°C) (SI7021-A20: 5.1.2)
-  float temp = ((175.71 * (float)read_result) / 65536) - 46.85;
+  float temp = ((175.71 * (((float)si7021_read_result) / 65536)) - 46.85);
 
   // update static variable
   si7021_temp = temp;
+
+  // delay to avoid RMW errors
+  timer_delay(80);
 }
 
 
@@ -286,7 +312,7 @@ uint8_t si7021_store_user_reg(void)
   CORE_DECLARE_IRQ_STATE;
   CORE_ENTER_CRITICAL();
 
-  si7021_user_reg_data = read_result;
+  si7021_user_reg_data = si7021_read_result;
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();

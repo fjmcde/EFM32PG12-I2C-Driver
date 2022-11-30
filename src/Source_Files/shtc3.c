@@ -18,9 +18,9 @@
 //***********************************************************************************
 // static/private data
 //***********************************************************************************
-static volatile uint32_t read_result;
-static volatile uint32_t write_data;
-static volatile uint16_t crc_data;
+static volatile uint32_t shtc3_read_result;
+static volatile uint32_t shtc3_write_data;
+static volatile uint16_t shtc3_crc_data;
 static volatile float shtc3_rh;
 static volatile float shtc3_temp;
 
@@ -83,7 +83,7 @@ void shtc3_open(I2C_TypeDef *i2c)
   timer_delay(1);
 
   // transmit sleep command
-  shtc3_write(I2C1, sleep, SHTC3_SLEEP_CB);
+  shtc3_write(I2C1, sleep, SHTC3_OPEN_CB);
 }
 
 
@@ -115,7 +115,7 @@ void shtc3_write(I2C_TypeDef *i2c, SHTC3_CMD_Typedef cmd, uint32_t shtc3_cb)
   CORE_ENTER_CRITICAL();
 
   // reset read_result
-  read_result = SHTC3_RESET_READ_RESULT;
+  shtc3_read_result = SHTC3_RESET_READ_RESULT;
 
   bool lock = check_lock(cmd);
 
@@ -127,7 +127,7 @@ void shtc3_write(I2C_TypeDef *i2c, SHTC3_CMD_Typedef cmd, uint32_t shtc3_cb)
   i2c_start_sm.read_operation = false;
   i2c_start_sm.rxdata = &i2c->RXDATA;
   i2c_start_sm.txdata = &i2c->TXDATA;
-  i2c_start_sm.data = &write_data;
+  i2c_start_sm.data = &shtc3_write_data;
   i2c_start_sm.tx_cmd = ((uint16_t)cmd);
   i2c_start_sm.bytes_req = SHTC3_ZERO_BYTES;
   i2c_start_sm.bytes_tx = SHTC3_TX_2_BYTES;
@@ -153,7 +153,7 @@ void shtc3_read(I2C_TypeDef *i2c, bool checksum, uint32_t shtc3_cb)
   CORE_ENTER_CRITICAL();
 
   // reset read_result
-  read_result = SHTC3_RESET_READ_RESULT;
+  shtc3_read_result = SHTC3_RESET_READ_RESULT;
 
   // initialize local I2C state machine
   volatile I2C_SM_STRUCT i2c_start_sm;
@@ -163,8 +163,8 @@ void shtc3_read(I2C_TypeDef *i2c, bool checksum, uint32_t shtc3_cb)
   i2c_start_sm.read_operation = true;
   i2c_start_sm.txdata = &i2c->TXDATA;
   i2c_start_sm.rxdata = &i2c->RXDATA;
-  i2c_start_sm.data = &read_result;
-  i2c_start_sm.crc_data = &crc_data;
+  i2c_start_sm.data = &shtc3_read_result;
+  i2c_start_sm.crc_data = &shtc3_crc_data;
   i2c_start_sm.checksum = checksum;
   i2c_start_sm.bytes_req = SHTC3_REQ_6_BYTES;
   i2c_start_sm.bytes_tx = SHTC3_ZERO_BYTES;
@@ -184,7 +184,7 @@ void shtc3_read(I2C_TypeDef *i2c, bool checksum, uint32_t shtc3_cb)
 
 
 /******************************************************************************
- ***************************** PRIVATE FUNCTIONS ******************************
+ **************************** CONVERSION FUNCTIONS ****************************
  ******************************************************************************/
 
 
@@ -203,11 +203,15 @@ void shtc3_read(I2C_TypeDef *i2c, bool checksum, uint32_t shtc3_cb)
  ******************************************************************************/
 void shtc3_parse_measurement_data_RH_first(void)
 {
+  // make atomic by disallowing interrupts
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
   // manipulate binary shift truncation to split
   // data into MSB (index 1) and LSB (index 0)
   uint16_t split[2];
-  split[1] = (((uint32_t)read_result) >> 16);
-  split[0] = ((((uint32_t)read_result) << 16) >> 16);
+  split[1] = (((uint32_t)shtc3_read_result) >> 16);
+  split[0] = ((((uint32_t)shtc3_read_result) << 16) >> 16);
 
   // calculate measurements
   float rh = shtc3_calc_rh(split[1]);
@@ -216,7 +220,89 @@ void shtc3_parse_measurement_data_RH_first(void)
   // modify private variables
   shtc3_set_rh(rh);
   shtc3_set_temp(temp);
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
 }
+
+
+/******************************************************************************
+ ************************* PUBLIC ACCESSOR FUNCTIONS **************************
+ ******************************************************************************/
+
+
+float shtc3_get_rh()
+{
+  // make atomic by disallowing interrupts
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  float rh = shtc3_rh;
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+
+  return rh;
+}
+
+
+float shtc3_get_temp()
+{
+  // make atomic by disallowing interrupts
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  float temp = shtc3_temp;
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+
+  return temp;
+}
+
+
+/******************************************************************************
+ ************************ PUBLIC MODIFIER FUNCTIONS ***************************
+ ******************************************************************************/
+
+
+/***************************************************************************//**
+ * @brief
+ *  Private function to store percent relative humidity data in private
+ *  data member.
+ *
+ * @details
+ *  Stores calculated data in private data member for easy access.
+ ******************************************************************************/
+void shtc3_set_rh(float rh)
+{
+  shtc3_rh = rh;
+
+  // delay to avoid RMW errors
+  timer_delay(80);
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *  Private function to store temperature (Celsius) data in private
+ *  data member.
+ *
+ * @details
+ *  Stores calculated data in private data member for easy access.
+ ******************************************************************************/
+void shtc3_set_temp(float temp)
+{
+  shtc3_temp = temp;
+
+  // delay for RMW errors
+  timer_delay(80);
+}
+
+
+/******************************************************************************
+ ***************************** PRIVATE FUNCTIONS ******************************
+ ******************************************************************************/
 
 
 /***************************************************************************//**
@@ -228,14 +314,8 @@ void shtc3_parse_measurement_data_RH_first(void)
  ******************************************************************************/
 uint16_t shtc3_calc_rh(uint16_t data)
 {
-  // make atomic by disallowing interrupts
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
+  // convert raw measurement code to % RH
   float rh =  (100 * (((float)data) / 65536));
-
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
 
   return rh;
 }
@@ -250,58 +330,10 @@ uint16_t shtc3_calc_rh(uint16_t data)
  ******************************************************************************/
 uint16_t shtc3_calc_temp(uint16_t data)
 {
-  // make atomic by disallowing interrupts
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
+  // Convert raw measurement code to temperature (Celsius)
   float temp =  (175 * ((float)(data) / 65536)) - 45;
 
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
-
   return temp;
-}
-
-
-/***************************************************************************//**
- * @brief
- *  Private function to store percent relative humidity data in private
- *  data member.
- *
- * @details
- *  Stores calculated data in private data member for easy access.
- ******************************************************************************/
-void shtc3_set_rh(float rh)
-{
-  // atomic operation
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
-  shtc3_rh = rh;
-
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
-}
-
-
-/***************************************************************************//**
- * @brief
- *  Private function to store temperature (Celsius) data in private
- *  data member.
- *
- * @details
- *  Stores calculated data in private data member for easy access.
- ******************************************************************************/
-void shtc3_set_temp(float temp)
-{
-  // atomic operation
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
-  shtc3_temp = temp;
-
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
 }
 
 
@@ -346,39 +378,4 @@ bool check_lock(SHTC3_CMD_Typedef cmd)
   }
 
   return lock;
-}
-
-
-/******************************************************************************
- ************************* PUBLIC ACCESSOR FUNCTIONS **************************
- ******************************************************************************/
-
-
-float shtc3_get_rh()
-{
-  // make atomic by disallowing interrupts
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
-  float rh = shtc3_rh;
-
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
-
-  return rh;
-}
-
-
-float shtc3_get_temp()
-{
-  // make atomic by disallowing interrupts
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
-  float temp = shtc3_temp;
-
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
-
-  return temp;
 }

@@ -894,7 +894,7 @@ void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm)
   }
 
   // 80ms timer delay for RWM sync
-  timer_delay(80);
+  timer_delay(13);
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
@@ -947,8 +947,9 @@ void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm)
   }
 
   // 80ms timer delay for RWM sync
-  timer_delay(I2C_80MS_DELAY);
+  timer_delay(13);
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
 }
+

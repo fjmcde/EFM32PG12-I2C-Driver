@@ -23,11 +23,11 @@
 //***********************************************************************************
 // static/private data
 //***********************************************************************************
-static float si7021_rh;
-static float si7021_temp;
-static uint8_t si7021_user_reg;
-static float shtc3_rh;
-static float shtc3_temp;
+static float app_si7021_rh;
+static float app_si7021_temp;
+static uint8_t app_si7021_user_reg;
+static float app_shtc3_rh;
+static float app_shtc3_temp;
 
 //***********************************************************************************
 // static/private functions
@@ -167,8 +167,15 @@ void scheduled_si7021_hum_read_cb(void)
   // remove event from scheduler
   remove_scheduled_event(SI7021_HUM_READ_CB);
 
+  si7021_parse_RH_data();
+
   // read temperature from previous previous RH measurement
   si7021_i2c_read(I2C0, MeasureTFromPrevRH, false, SI7021_TEMP_READ_CB);
+
+  timer_delay(80);
+
+  // parse temperature measurement code
+  si7021_parse_temp_data();
 }
 
 
@@ -187,12 +194,19 @@ void scheduled_si7021_temp_read_cb(void)
   // remove event from scheduler
   remove_scheduled_event(SI7021_TEMP_READ_CB);
 
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
   // store measurements
-  si7021_rh = si7021_get_rh();
-  si7021_temp = si7021_get_temp();
+  app_si7021_rh = si7021_get_rh();
+  app_si7021_temp = si7021_get_temp();
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
 
   // drive LED
-  drive_leds(si7021_rh, LED0_PORT, LED0_PIN);
+  drive_leds(app_si7021_rh, LED0_PORT, LED0_PIN);
 }
 
 
@@ -213,8 +227,15 @@ void scheduled_si7021_write_reg_cb(void)
   // read from user register
   si7021_i2c_read(I2C0, readReg1, false, SI7021_READ_REG_CB);
 
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
   // store user register settings
-  si7021_user_reg = si7021_store_user_reg();
+  app_si7021_user_reg = si7021_store_user_reg();
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
 }
 
 
@@ -234,6 +255,26 @@ void scheduled_si7021_read_reg_cb(void)
 
   // measure relative humidity using Si7021
   si7021_i2c_read(I2C0, measureRH_NHMM, false, SI7021_HUM_READ_CB);
+
+  timer_delay(80);
+
+  // parse RH measurement code
+  si7021_parse_RH_data();
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *   Handles the scheduling of the SHTC3 open callback
+ *
+ * @details
+ *  Just removes scheduled callback event after the SHTC3 has been opened and put
+ *  to sleep.
+ ******************************************************************************/
+void scheduled_shtc3_open_cb(void)
+{
+  // remove event from scheduler
+  remove_scheduled_event(SHTC3_OPEN_CB);
 }
 
 
@@ -252,13 +293,6 @@ void scheduled_shtc3_sleep_cb(void)
 {
   // remove event from scheduler
   remove_scheduled_event(SHTC3_SLEEP_CB);
-
-  shtc3_parse_measurement_data_RH_first();
-
-  shtc3_rh = shtc3_get_rh();
-  shtc3_temp = shtc3_get_temp();
-
-  drive_leds(shtc3_rh, LED1_PORT, LED1_PIN);
 }
 
 
@@ -301,14 +335,31 @@ void scheduled_shtc3_measurement_cb(void)
  *   Handles the scheduling of the SHTC3 read request callback
  *
  * @details
- *   Following the a read transaction, a sleep packet is sent to put the
- *   SHTC3 back to sleep. The SHTC3 should be put to sleep following every
- *   transaction.
+ *   Following the a read transaction (which scheduled a sleep callback),
+ *   a sleep packet is sent to put the SHTC3 back to sleep. The SHTC3 should
+ *   be put to sleep following every transaction.
  ******************************************************************************/
 void scheduled_shtc3_read_req_cb(void)
 {
   // remove event from scheduler
   remove_scheduled_event(SHTC3_READ_REQ_CB);
+
+  // parse measured data;
+  shtc3_parse_measurement_data_RH_first();
+
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  app_shtc3_rh = shtc3_get_rh();
+  app_shtc3_temp = shtc3_get_temp();
+
+  timer_delay(80);
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+
+  drive_leds(app_shtc3_rh, LED1_PORT, LED1_PIN);
 
   // transmit a sleep command
   shtc3_write(I2C1, sleep, SHTC3_SLEEP_CB);

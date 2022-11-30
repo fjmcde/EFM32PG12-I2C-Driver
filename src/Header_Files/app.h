@@ -44,6 +44,7 @@
 #define SHTC3_WAKEUP_CB       0x02        // 0b0000 0000 0010; wakeup callback
 #define SHTC3_MEASUREMENT_CB  0x01        // 0b0000 0000 0001; transmit measurement callback
 #define SHTC3_READ_REQ_CB     0x800       // 0b1000 0000 0000; read callback
+#define SHTC3_OPEN_CB         0x400       // 0b0100 0000 0000; open callback
 
 //***********************************************************************************
 // enums
