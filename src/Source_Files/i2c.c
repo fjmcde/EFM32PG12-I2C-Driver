@@ -4,9 +4,9 @@
  * @author
  *   Frank McDermott
  * @date
- *   11/06/2022
+ *   11/29/2022
  * @brief
- *   I2C source file for use with the Si7021 Temperature & Humidity Sensor
+ *   I2C Protocol driver
  ******************************************************************************/
 
 //***********************************************************************************
@@ -33,6 +33,8 @@ static void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm);
 static void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm);
 static void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm);
 /* static transmission functions */
+static void tx_cmd_msb(volatile I2C_SM_STRUCT *i2c_sm);
+static uint8_t i2c_split_tx(volatile uint32_t *cmd);
 static void i2c_tx_ack(volatile I2C_SM_STRUCT *i2c_sm);
 static void i2c_tx_nack(volatile I2C_SM_STRUCT *i2c_sm);
 static void i2c_tx_cont(volatile I2C_SM_STRUCT *i2c_sm);
@@ -73,9 +75,6 @@ void i2c_bus_reset(I2C_TypeDef *i2c)
 
   // clear IFC register (TRM 16.5.16)
   i2c->IFC = _I2C_IFC_MASK;
-
-  // assert that IF register is clear
-  EFM_ASSERT(!(i2c->IF & _I2C_IEN_RESETVALUE));
 
   // clear the transmit buffer (16.5.2)
   i2c->CMD = I2C_CMD_CLEARTX;
@@ -136,24 +135,17 @@ void i2c_open(I2C_TypeDef *i2c, I2C_OPEN_STRUCT *app_i2c_open)
       CMU_ClockEnable(cmuClock_I2C1, true);
   }
 
-
   // if START interrupt flag not set ...
   if(!(i2c->IF & I2C_IFS_START))
   {
       // .. set the START interrupt flag
       i2c->IFS = I2C_IFS_START;
-
-      // assert that the flag has been set
-      EFM_ASSERT(i2c->IF & I2C_IFS_START);
   }
   // .. else ...
   else
   {
       // clear START flag
       i2c->IFC = I2C_IFC_START;
-
-      // assert that the flag as been cleared
-      EFM_ASSERT(!(i2c->IF & I2C_IFS_START));
   }
 
   // set values for I2C_Init
@@ -222,9 +214,6 @@ void i2c_init_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // halt until bus is ready
       while(i2c0_sm.busy);
 
-      // will trigger if a previous I2C operation has not completed
-      EFM_ASSERT((I2C0->STATE & _I2C_STATE_STATE_MASK) == I2C_STATE_STATE_IDLE);
-
       // make operation atomic
       CORE_DECLARE_IRQ_STATE;
       CORE_ENTER_CRITICAL();
@@ -243,9 +232,6 @@ void i2c_init_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // halt until bus is ready
       while(i2c1_sm.busy);
 
-      // will trigger if a previous I2C operation has not completed
-      EFM_ASSERT((I2C1->STATE & _I2C_STATE_STATE_MASK) == I2C_STATE_STATE_IDLE);
-
       // make operation atomic
       CORE_DECLARE_IRQ_STATE;
       CORE_ENTER_CRITICAL();
@@ -260,6 +246,36 @@ void i2c_init_sm(volatile I2C_SM_STRUCT *i2c_sm)
   timer_delay(I2C_80MS_DELAY);
 
 
+}
+
+
+static void tx_cmd_msb(volatile I2C_SM_STRUCT *i2c_sm)
+{
+  // decrement transmit bytes
+  i2c_sm->bytes_tx--;
+
+  // split the tx_cmd
+  uint8_t tx =  i2c_split_tx(&i2c_sm->tx_cmd);
+
+  // transmit MSB of tx_cmd
+  i2c_tx_cmd(i2c_sm, tx);
+}
+
+
+static uint8_t i2c_split_tx(volatile uint32_t *cmd)
+{
+  uint8_t tx[2];
+
+  // manipulate binary shift truncation to split
+  // command into MSB (index 0) and LSB (index 1)
+  tx[0] = (((uint16_t)*cmd) >> 8);
+  tx[1] = ((((uint16_t)*cmd) << 8) >> 8);
+
+  // store the LSB
+  *cmd = tx[1];
+
+  // return the MSB
+  return tx[0];
 }
 
 
@@ -308,6 +324,7 @@ void i2c_tx_stop(volatile I2C_SM_STRUCT *i2c_sm)
 
 void i2c_tx_cmd(volatile I2C_SM_STRUCT *i2c_sm, uint32_t tx_cmd)
 {
+
   // transmit command via TXDATA
   *i2c_sm->txdata = tx_cmd;
 }
@@ -417,12 +434,64 @@ void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm)
   switch(i2c_sm->curr_state)
   {
     case reqRes:
+      // if zero bytes are expected to transmit ...
+      if(i2c_sm->bytes_tx == 0)
+      {
+          // ... and the initial operation was a read ...
+          if(i2c_sm->read_operation)
+          {
+              // SHTC3 READ
+              // change states
+              i2c_sm->curr_state = dataRx;
+              break;
+          }
+          else
+          {
+            // a write operation where zero bytes are expected
+            // to transmit is a logic error. EFM_ASSERT For debugging.
+            EFM_ASSERT(false);
+          }
+      }
+      // ... else if one byte is expected to transmit ...
+      else if(i2c_sm->bytes_tx == 1)
+      {
+          // SI7021 READ OR WRITE
+          // transmit command
+          i2c_tx_cmd(i2c_sm, i2c_sm->tx_cmd);
+      }
+      // .. otherwise if two bytes are expected to transmit ...
+      else if(i2c_sm->bytes_tx == 2)
+      {
+          // ... and the initial operation was a write
+          if(!(i2c_sm->read_operation))
+          {
+              // SHTC3 WRITE
+              // transmit MSB of tx_cmd
+              tx_cmd_msb(i2c_sm);
+
+              // copy LSB of tx_cmd to the data register
+              *i2c_sm->data = i2c_sm->tx_cmd;
+
+          }
+          else
+          {
+              // a read with 2 bytes expected to transmit is a
+              // logic error. EFM_ASSERT for debugging.
+              EFM_ASSERT(false);
+          }
+      }
+      else
+      {
+          // a read or write expecting more than two bytes to transmit
+          // is a logic error. EFM_ASSERT for debugging.
+          EFM_ASSERT(false);
+      }
+
       // change state
       i2c_sm->curr_state = commandTx;
-
-      // transmit command
-      i2c_tx_cmd(i2c_sm, i2c_sm->tx_cmd);
       break;
+
+
     case commandTx:
       // if initial operation was a read ...
       if(i2c_sm->read_operation)
@@ -436,19 +505,21 @@ void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // ... else ...
       else
       {
-          // ... write data to transmit buffer
-          i2c_tx_cmd(i2c_sm, *i2c_sm->data);
+        // ... write data to transmit buffer
+        i2c_tx_cmd(i2c_sm, *i2c_sm->data);
 
-          // change state
-          i2c_sm->curr_state = dataRx;
-
+        // change state
+        i2c_sm->curr_state = dataRx;
       }
-
       break;
+
+
     case dataReq:
       // change state
       i2c_sm->curr_state = dataRx;
       break;
+
+
     case dataRx:
       // if initial operation was a write ...
       if(!(i2c_sm->read_operation))
@@ -462,19 +533,23 @@ void i2cn_ack_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // ... else read operation ...
       else
       {
-          // entering this else indicates an error in logic
-          // in the data_rx state, a read request will have already been
-          // acknowledged and the slave should NOT ACK.
+          // entering this else indicates an error in logic.
+          // in the dataRx state a read request will have already been
+          // acknowledged and the slave should NOT ACK but instead RXDATAV.
           EFM_ASSERT(false);
       }
       break;
+
+
     default:
+      // entering this else indicates an error in logic. An ACK has been
+      // received in an unexpected state. EFM_ASSERT for debugging.
       EFM_ASSERT(false);
       break;
   }
 
   // 80ms timer delay for RWM sync
-  timer_delay(10);
+  timer_delay(80);
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
@@ -503,9 +578,21 @@ void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm)
   switch(i2c_sm->curr_state)
   {
     case reqRes:
+      if(i2c_sm->num_bytes > 3)
+      {
+          // change state;
+          i2c_sm->curr_state = mStop;
+
+          // transmit stop
+          i2c_tx_stop(i2c_sm);
+          break;
+      }
+
       // send repeated start command
       i2c_tx_req(i2c_sm, i2cWriteBit);
       break;
+
+
     case commandTx:
       // set CMD CONT register
       i2c_tx_cont(i2c_sm);
@@ -513,6 +600,8 @@ void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // re-send command
       i2c_tx_cmd(i2c_sm, i2c_sm->tx_cmd);
       break;
+
+
     case dataReq:
       if(i2c_sm->read_operation)
       {
@@ -521,11 +610,22 @@ void i2cn_nack_sm(volatile I2C_SM_STRUCT *i2c_sm)
       }
       else
       {
-          i2c_tx_req(i2c_sm, i2cWriteBit);
+          if(i2c_sm->num_bytes == 2)
+          {
+              // change state
+              i2c_sm->curr_state = commandTx;
+          }
+          else
+          {
+              i2c_tx_req(i2c_sm, i2cWriteBit);
+          }
       }
-
       break;
+
+
     default:
+      // entering this else indicates an error in logic. An ACK has been
+      // received in an unexpected state. EFM_ASSERT for debugging.
       EFM_ASSERT(false);
   }
 
@@ -561,29 +661,90 @@ void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm)
       // if initial operation was a read ...
       if(i2c_sm->read_operation)
       {
+          // on checksum byte (byte 4 or byte 1) ...
+          if(((i2c_sm->num_bytes - 1) % 3) == 0)
+          {
+              // ... if checksum requested ...
+              if(i2c_sm->checksum)
+              {
+                  // ... store checksum data in crc_data (shifted n bits)
+                  *i2c_sm->crc_data |= (*i2c_sm->rxdata << (8 * (i2c_sm->num_bytes - 1) % 2));
+              }
+              // ... else ignore checksum (byte 4) ...
+              else if(i2c_sm->num_bytes == 4)
+              {
+                  // read rxdata register to clear it (faster than NACK)
+                  if(*i2c_sm->rxdata == false){};
+              }
+          }
+          // else on measurement bytes (Byte 6, 5, 3, and 2)
+          else
+          {
+              /* TODO: Come up with more elegant solution
+               *       to calculate the shift */
+              uint8_t shift;
+              switch(i2c_sm->num_bytes)
+              {
+                case(6):
+                  shift = 24;
+                  break;
+                case(5):
+                  shift = 16;
+                  break;
+                case(3):
+                  shift = 8;
+                  break;
+                case(2):
+                  shift = 0;
+                  break;
+              }
+
+              // store measurement data in read_result (shifted n bits)
+              *i2c_sm->data |= (*i2c_sm->rxdata << shift);
+          }
+
           // decrement num_bytes counter
           i2c_sm->num_bytes--;
 
-          // retrieve read data, but left shift that data n number of bytes remaining
-          *i2c_sm->data |= (*i2c_sm->rxdata << (SHIFT_MSBYTE * i2c_sm->num_bytes));
 
-          // check if more data is expected ...
-          if(i2c_sm->num_bytes > 0)
+          // if checksum was requested ...
+          if(i2c_sm->checksum)
           {
-              // send ACK
-              i2c_tx_ack(i2c_sm);
+              // ... NACK AFTER last CRC byte
+              if(i2c_sm->num_bytes == 0)
+              {
+                  // transmit NACK
+                  i2c_tx_nack(i2c_sm);
+              }
+              // ... else NACK after last byte
+              else
+              {
+                  // transmit ACK
+                  i2c_tx_ack(i2c_sm);
+                  break;
+              }
+
           }
+          // if checksum not requested, NACK BEFORE last CRC byte ...
+          else if(i2c_sm->num_bytes == 1)
+          {
+              // transmit NACK
+              i2c_tx_nack(i2c_sm);
+          }
+          // ... else ACK all other bytes
           else
           {
-              // send NACK
-              i2c_tx_nack(i2c_sm);
-
-              // send stop
-              i2c_tx_stop(i2c_sm);
-
-              //change state
-              i2c_sm->curr_state = mStop;
+              // transmit ACK
+              i2c_tx_ack(i2c_sm);
+              break;
           }
+
+          // send stop
+          i2c_tx_stop(i2c_sm);
+
+          //change state
+          i2c_sm->curr_state = mStop;
+
       }
       // ... else write ...
       else
@@ -593,13 +754,17 @@ void i2cn_rxdata_sm(volatile I2C_SM_STRUCT *i2c_sm)
           EFM_ASSERT(false);
       }
       break;
+
+
     default:
+      // entering this else indicates an error in logic. An ACK has been
+      // received in an unexpected state. EFM_ASSERT for debugging.
       EFM_ASSERT(false);
       break;
   }
 
   // 80ms timer delay for RWM sync
-  timer_delay(I2C_80MS_DELAY);
+  timer_delay(80);
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
@@ -629,19 +794,25 @@ void i2cn_mstop_sm(volatile I2C_SM_STRUCT *i2c_sm)
   switch(i2c_sm->curr_state)
   {
     case mStop:
-      // unblock sleep
-      sleep_unblock_mode(I2C_EM_BLOCK);
+      if(!(i2c_sm->lock_sm))
+      {
+          // reset the I2C bus
+          i2c_bus_reset(i2c_sm->I2Cn);
+      }
+
+      // clear I2C State Machine busy bit
+      i2c_sm->busy = I2C_BUS_READY;
 
       // schedule device call back
       add_scheduled_event(i2c_sm->i2c_cb);
 
-      // reset the I2C bus
-      i2c_bus_reset(i2c_sm->I2Cn);
-
-      // clear I2C State Machine busy bit
-      i2c_sm->busy = I2C_BUS_READY;
+      // unblock sleep
+      sleep_unblock_mode(I2C_EM_BLOCK);
       break;
+
     default:
+      // entering this else indicates an error in logic. An ACK has been
+      // received in an unexpected state. EFM_ASSERT for debugging.
       EFM_ASSERT(false);
   }
 

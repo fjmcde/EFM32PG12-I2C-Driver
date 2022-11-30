@@ -69,7 +69,7 @@ void timer_delay(uint32_t ms_delay)
 
 	// enable TIMER0
 	TIMER_Enable(TIMER0, true);
-	while (TIMER0->CNT != 00);
+	while(TIMER0->CNT != 00);
 
 	// disable TIMER0
 	TIMER_Enable(TIMER0, false);

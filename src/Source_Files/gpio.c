@@ -4,7 +4,7 @@
  * @author
  *   Frank McDermott
  * @date
- *   9/18/2022
+ *   11/29/2022
  * @brief
  *   GPIO source file for driving GPIO peripherals
  ******************************************************************************/
@@ -33,11 +33,11 @@
  *   Driver to open the GPIO peripheral.
  *
  * @details
- *   Enables the GPIO for use with the buttons LEDs, and Si7021 Temperature &
- *   humidity sensor. Enables GPIO clock, clears all interrupt flags, enables
- *   interrupts and enables the NVIC for the peripherals.
+ *   Enables the GPIO for use with the two onboard LEDs (LED0 & LED1), the
+ *   Si7021 and the SHTC3 Temperature & humidity sensors.
  ******************************************************************************/
-void gpio_open(void){
+void gpio_open(void)
+{
 
   // enable clock
   CMU_ClockEnable(cmuClock_GPIO, true);
@@ -50,14 +50,8 @@ void gpio_open(void){
   GPIO_PinModeSet(SI7021_SDA_PORT, SI7021_SDA_PIN, SI7021_WIREDAND, SI7021_DEFAULT_1);
 
   // configure SHTC3
-  /*
-  GPIO_DriveStrengthSet(SHTC3_SENSOR_EN_PORT, SHTC3_DRIVE_STRENGTH);
-  GPIO_PinModeSet(SHTC3_SENSOR_EN_PORT, SHTC3_SENSOR_EN_PORT,
-                  SHTC3_SENSOR_GPIO_MODE, SHTC3_LINE_DEFAULT);
-  GPIO_PinModeSet(SHTC3_SDA_PORT, SHTC3_SDA_PIN, SHTC3_WIREDAND, SHTC3_LINE_DEFAULT);
   GPIO_PinModeSet(SHTC3_SCL_PORT, SHTC3_SCL_PIN, SHTC3_WIREDAND, SHTC3_LINE_DEFAULT);
-  */
-
+  GPIO_PinModeSet(SHTC3_SDA_PORT, SHTC3_SDA_PIN, SHTC3_WIREDAND, SHTC3_LINE_DEFAULT);
 
   // configure LEDs
   GPIO_DriveStrengthSet(LED0_PORT, LED0_DRIVE_STRENGTH);
@@ -67,4 +61,28 @@ void gpio_open(void){
 
   // clear interrupt flags
   GPIO->IFC &= ~(_GPIO_IFC_RESETVALUE);
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *   Sets up the application-specific peripherals, schedulers, and timers
+ *
+ * @details
+ *   Drives one of the two onboard LEDs on the EFM32 if the relative humidity
+ *   measurement threshold is reached.
+ ******************************************************************************/
+void drive_leds(uint16_t humidity, GPIO_Port_TypeDef led_port, uint8_t led_pin)
+{
+  // if relative humidity is greater than 30.0%...
+  if(humidity >= RH_LED_ON)
+  {
+      // ... Assert LED1
+      GPIO_PinOutSet(led_port, led_pin);
+  }
+  else
+  {
+      // De-assert LED1
+      GPIO_PinOutClear(led_port, led_pin);
+  }
 }

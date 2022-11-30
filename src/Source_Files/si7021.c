@@ -18,14 +18,21 @@
 //***********************************************************************************
 // static/private data
 //***********************************************************************************
-static volatile uint16_t read_result;
-static volatile uint16_t write_data;
+static volatile uint32_t read_result;
+static volatile uint32_t write_data;
+static volatile uint16_t crc_data;
+static volatile float si7021_rh;
+static volatile float si7021_temp;
+static volatile uint8_t si7021_user_reg_data;
+//static volatile uint8_t si7021_heater_reg_data;
+
 
 //***********************************************************************************
 // static/private functions
 //***********************************************************************************
-static uint8_t si7021_num_bytes(SI7021_CMD_Typedef cmd, bool checksum);
-
+static uint8_t req_bytes(uint8_t cmd);
+static float si7021_calc_RH(void);
+static float si7021_calc_temp(void);
 
 //***********************************************************************************
 // function definitions
@@ -40,13 +47,15 @@ static uint8_t si7021_num_bytes(SI7021_CMD_Typedef cmd, bool checksum);
  * @param[in] i2c
  *  Desired I2Cn peripheral (either I2C0 or I2C1)
  ******************************************************************************/
-void si7021_i2c_open(I2C_TypeDef *i2c)
+void si7021_i2c_open(I2C_TypeDef *i2c,
+                     SI7021_CMD_Typedef cmd,
+                     SI7021_USER_REG1_CTRL_Typedef ctrl)
 {
   // instantiate an app specific I2C
   I2C_OPEN_STRUCT app_i2c_open;
 
   // set a local delay
-  uint32_t delay = DELAY80MS;
+  uint32_t delay = SI7021_PU_DELAY_FULL_MAX;
 
   // Powerup Time (delay) worst case: From VDD ≥ 1.9 V to ready for a
   // conversion, full temperature range (80ms)
@@ -54,7 +63,7 @@ void si7021_i2c_open(I2C_TypeDef *i2c)
 
   // set app specific frequency
   app_i2c_open.freq = I2C_FREQ;
-  app_i2c_open.refFreq = REFFREQ;
+  app_i2c_open.refFreq = SI7021_REFFREQ;
 
   // set app specific low/high clock ratio
   app_i2c_open.clhr = I2C_CLHR_6_3;
@@ -71,6 +80,12 @@ void si7021_i2c_open(I2C_TypeDef *i2c)
 
   // open I2C peripheral
   i2c_open(i2c, &app_i2c_open);
+
+  // timer delay of 1ms (Max required is 240 micro-seconds; DS 3.1)
+  timer_delay(80);
+
+  // transmit write to user control register
+  si7021_i2c_write(I2C0, cmd, ctrl, SI7021_WRITE_REG_CB);
 }
 
 /***************************************************************************//**
@@ -93,14 +108,11 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
   CORE_ENTER_CRITICAL();
 
   // reset read_result
-  read_result = RESET_READ_RESULT;
+  read_result = SI7021_RESET_READ_RESULT;
 
-  uint8_t bytes_req;
+  uint8_t bytes = req_bytes(cmd);
 
-  // determine how many bytes to request
-  bytes_req = si7021_num_bytes(cmd, checksum);
-
-  // initialize local I2C state machine for i2c_start()
+  // initialize local I2C state machine
   volatile I2C_SM_STRUCT i2c_start_sm;
   i2c_start_sm.I2Cn = i2c;
   i2c_start_sm.curr_state = reqRes;
@@ -109,10 +121,14 @@ void si7021_i2c_read(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, bool checksum, ui
   i2c_start_sm.rxdata = &i2c->RXDATA;
   i2c_start_sm.txdata = &i2c->TXDATA;
   i2c_start_sm.data = &read_result;
-  i2c_start_sm.tx_cmd = ((uint8_t) cmd);
-  i2c_start_sm.bytes_req = bytes_req;
-  i2c_start_sm.num_bytes = bytes_req;
+  i2c_start_sm.crc_data = &crc_data;
+  i2c_start_sm.checksum = checksum;
+  i2c_start_sm.tx_cmd = ((uint8_t)cmd);
+  i2c_start_sm.bytes_req = bytes;
+  i2c_start_sm.bytes_tx = SI7021_TX_1_BYTE;
+  i2c_start_sm.num_bytes = bytes;
   i2c_start_sm.i2c_cb = si7021_cb;
+  i2c_start_sm.lock_sm = false;
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
@@ -147,29 +163,46 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, ui
   write_data = ctrl;
 
   // initialize local I2C state machine for i2c_start()
-   volatile I2C_SM_STRUCT i2c_start_sm;
-   i2c_start_sm.I2Cn = i2c;
-   i2c_start_sm.curr_state = reqRes;
-   i2c_start_sm.slave_addr = SI7021_ADDR;
-   i2c_start_sm.read_operation = false;
-   i2c_start_sm.rxdata = &i2c->RXDATA;
-   i2c_start_sm.txdata = &i2c->TXDATA;
-   i2c_start_sm.data = &write_data;
-   i2c_start_sm.tx_cmd = cmd;
-   i2c_start_sm.bytes_req = SI7021_TX_1_BYTE;
-   i2c_start_sm.num_bytes = SI7021_TX_1_BYTE;
-   i2c_start_sm.i2c_cb = si7021_cb;
+  volatile I2C_SM_STRUCT i2c_start_sm;
+  i2c_start_sm.I2Cn = i2c;
+  i2c_start_sm.curr_state = reqRes;
+  i2c_start_sm.slave_addr = SI7021_ADDR;
+  i2c_start_sm.read_operation = false;
+  i2c_start_sm.rxdata = &i2c->RXDATA;
+  i2c_start_sm.txdata = &i2c->TXDATA;
+  i2c_start_sm.data = &write_data;
+  i2c_start_sm.tx_cmd = cmd;
+  i2c_start_sm.bytes_tx = SI7021_TX_1_BYTE;
+  i2c_start_sm.num_bytes = SI7021_TX_1_BYTE;
+  i2c_start_sm.i2c_cb = si7021_cb;
+  i2c_start_sm.lock_sm = false;
 
-   // exit core critical to allow interrupts
-   CORE_EXIT_CRITICAL();
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
 
-   // start I2C protocol
-   i2c_init_sm(&i2c_start_sm);
+  // start I2C protocol
+  i2c_init_sm(&i2c_start_sm);
 
-   // transmit start
-   i2c_tx_req(&i2c_start_sm, i2cWriteBit);
+  // transmit start
+  i2c_tx_req(&i2c_start_sm, i2cWriteBit);
 }
 
+
+void si7021_parse_measurement_data(void)
+{
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  float rh = si7021_calc_RH();
+  float temp = si7021_calc_temp();
+
+  si7021_rh = rh;
+  si7021_temp = temp;
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+}
 
 /***************************************************************************//**
  * @brief
@@ -181,15 +214,11 @@ void si7021_i2c_write(I2C_TypeDef *i2c, SI7021_CMD_Typedef cmd, uint8_t ctrl, ui
  ******************************************************************************/
 float si7021_calc_RH(void)
 {
-  // make atomic by disallowing interrupts
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
   // convert the stored RH code to percent humidity (Si7021-A20: 5.1.1)
   float rh = ((125 * (float)read_result) / 65536) - 6;
 
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
+  // update static variable
+  si7021_rh = rh;
 
   return rh;
 }
@@ -197,62 +226,84 @@ float si7021_calc_RH(void)
 
 float si7021_calc_temp(void)
 {
-  // make atomic by disallowing interrupts
-  CORE_DECLARE_IRQ_STATE;
-  CORE_ENTER_CRITICAL();
-
   // convert stored temperature code to degrees (°C) (SI7021-A20: 5.1.2)
   float temp = ((175.71 * (float)read_result) / 65536) - 46.85;
 
-  // exit core critical to allow interrupts
-  CORE_EXIT_CRITICAL();
+  // update static variable
+  si7021_temp = temp;
 
   return temp;
 }
 
 
-uint32_t si7021_read_user_reg(void)
+uint8_t si7021_get_user_reg(void)
 {
   // make atomic by disallowing interrupts
   CORE_DECLARE_IRQ_STATE;
   CORE_ENTER_CRITICAL();
 
-  uint32_t data = read_result;
+  si7021_user_reg_data = read_result;
 
   // exit core critical to allow interrupts
   CORE_EXIT_CRITICAL();
 
-  return data;
+  return si7021_user_reg_data;
 }
 
 
-uint8_t si7021_num_bytes(SI7021_CMD_Typedef cmd, bool checksum)
+uint8_t req_bytes(uint8_t cmd)
 {
-  uint8_t bytes_req;
+  uint8_t bytes;
 
   switch(cmd)
   {
-    case readReg1:
-      bytes_req = SI7021_REQ_1_BYTE;
+    case measureT_NHMM:
+      bytes = SI7021_REQ_3_BYTES;
       break;
     case measureRH_NHMM:
-      bytes_req = SI7021_REQ_2_BYTES;
+      bytes = SI7021_REQ_3_BYTES;
       break;
     case MeasureTFromPrevRH:
-      bytes_req = SI7021_REQ_2_BYTES;
+      bytes = SI7021_REQ_3_BYTES;
+      break;
+    case readReg1:
+      bytes = SI7021_REQ_2_BYTES;
       break;
     default:
-      // Not all of the enumerated Si7021 commands have functionality
-      // if this default case is reached then the desired command
-      // functionality is not yet completed
+      // if the default case is reached, the chosen command
+      // has not yet been implemented. EFM_ASSERT for debugging.
       EFM_ASSERT(false);
       break;
   }
 
-  if(checksum)
-  {
-      bytes_req++;
-  }
+  return bytes;
+}
 
-  return bytes_req;
+
+float si7021_get_rh()
+{
+  // atomic operation
+    CORE_DECLARE_IRQ_STATE;
+    CORE_ENTER_CRITICAL();
+
+    float rh = si7021_rh;
+
+    // exit core critical to allow interrupts
+    CORE_EXIT_CRITICAL();
+
+    return rh;
+}
+
+float si7021_get_temp()
+{
+  // atomic operation
+  CORE_DECLARE_IRQ_STATE;
+  CORE_ENTER_CRITICAL();
+
+  float temp = si7021_temp;
+
+  // exit core critical to allow interrupts
+  CORE_EXIT_CRITICAL();
+
+  return temp;
 }

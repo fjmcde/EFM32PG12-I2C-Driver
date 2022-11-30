@@ -24,8 +24,8 @@
 // defined macros
 //***********************************************************************************
 /* I2C route configuration */
-#define I2C_SCL_ROUTE         APP_I2Cn_SCL_ROUTE          // SCL PC11: route location #15 (TRM 6.3 pg 75)
-#define I2C_SDA_ROUTE         APP_I2Cn_SDA_ROUTE          // SDA PC10: route location #15 (TRM 6.3 pg 78)
+#define I2C_SCL_ROUTE         APP_I2C_SCL_ROUTE          // SCL PC11: route location #15 (TRM 6.3 pg 75)
+#define I2C_SDA_ROUTE         APP_I2C_SDA_ROUTE          // SDA PC10: route location #15 (TRM 6.3 pg 78)
 #define I2C_SCL_PEN           I2C_ROUTEPEN_SCLPEN         // SCL PEN is bit 1 (TRM: 16.5.18)
 #define I2C_SDA_PEN           I2C_ROUTEPEN_SDAPEN         // SDA PEN is bit 2 (TRM 16.5.18)
 /* I2Cn Clock */
@@ -94,14 +94,18 @@ typedef struct
     I2C_STATES_Typedef            curr_state;             // tracks the current state of the state machine
     uint32_t                      slave_addr;             // pointer to the address of slave device currently being communicated with
     bool                          read_operation;         // True = Read operation; False = Write operation
-    volatile bool                 busy;                   // True when bus is busy; False when bus is available              //
-    volatile const uint32_t      *rxdata;                 // pointer to I2C receiver buffer address
+    volatile bool                 busy;                   // True when bus is busy; False when bus is available
+    volatile const uint32_t      *rxdata;                 // pointer to I2C receive buffer address
     volatile uint32_t            *txdata;                 // pointer to I2C transmit buffer address
-    volatile uint16_t            *data;                   // pointer to static data variable
+    volatile uint32_t            *data;                   // pointer to static data variable
+    volatile uint16_t            *crc_data;               // pointer to static checksum variable
+    bool                          checksum;               // True = checksum desired; False = ignore checksum
     uint32_t                      tx_cmd;                 // command to transmit over I2C
-    uint32_t                      bytes_req;              // number of bytes requested
+    uint8_t                       bytes_req;              // number of bytes requested
+    uint8_t                       bytes_tx;               // number of bytes to transmit
     uint32_t                      num_bytes;              // number of bytes remaining
     uint32_t                      i2c_cb;                 // I2C call back event to request upon completion of I2C operation
+    bool                          lock_sm;                // True = lock the state machine for addition commands; False = unlock; all commands sent
 }I2C_SM_STRUCT;
 
 

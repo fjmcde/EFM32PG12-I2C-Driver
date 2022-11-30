@@ -4,7 +4,7 @@
  * @author
  *   Frank McDermott
  * @date
- *   11/06/2022
+ *   11/29/2022
  * @brief
  *   Driver to configure application-specific peripherals
  ******************************************************************************/
@@ -23,7 +23,11 @@
 //***********************************************************************************
 // static/private data
 //***********************************************************************************
-
+static float si7021_rh;
+static float si7021_temp;
+static uint8_t si7021_user_reg;
+static float shtc3_rh;
+static float shtc3_temp;
 
 //***********************************************************************************
 // static/private functions
@@ -51,7 +55,8 @@ void app_peripheral_setup(void)
   scheduler_open();
   app_letimer_pwm_open(PWM_PER, PWM_ACT_PER, PWM_ROUTE_0, PWM_ROUTE_1, false, false, true);
   letimer_start(LETIMER0, true);
-  si7021_i2c_open(I2C0);
+  si7021_i2c_open(I2C0, writeReg1, measureResRH8_T12);
+  shtc3_open(I2C1);
 }
 
 
@@ -60,7 +65,8 @@ void app_peripheral_setup(void)
  *   Configure LETIMER for PWM mode.
  *
  * @details
- *   Driver which instantiates and opens the LETIMER in PWM mode for the application
+ *   Driver which instantiates and opens the LETIMER
+ *   peripheral in PWM mode
  *
  * @param[in] period
  *   Sets the period (in seconds) for the clock
@@ -73,6 +79,15 @@ void app_peripheral_setup(void)
  *
  * @param[in] out1_route
  *    out1 route to gpio port/pin
+ *
+ * @param[in] out0_en
+ *    True = enable out0_route; False = disable out0_route
+ *
+ * @param[in] out1_en
+ *    True = enable out1_route; False = disable out1_route
+ *
+ * @param[in] out_en
+ *    True = enable PWM output; False = disable PWM output
  *
  ******************************************************************************/
 void app_letimer_pwm_open(float period, float act_period,
@@ -103,93 +118,186 @@ void app_letimer_pwm_open(float period, float act_period,
 
 /***************************************************************************//**
  * @brief
- *   Handles the scheduling of the letimer0 underflow call back
+ *   Handles the scheduling of the LETIMER0 underflow call back
  *
  * @details
- *   Removes the underflow call back event from the scheduler then initializes
- *   a read from the Si7021
+ *   When the LETIMER0 underflows, sends a measurement packet to the SI7021
+ *   and a wakeup packet to the SHTC3
  ******************************************************************************/
 void scheduled_letimer0_uf_cb(void)
 {
   // remove LETIMER0 underflow callback even from scheduler
   remove_scheduled_event(LETIMER0_UF_CB);
 
-  // write to user register 1 on Si7021 to change measurement resolution
-  si7021_i2c_write(I2C0, writeReg1, measureResRH8_T12, SI7021_WRITE_REG_CB);
+  // measure relative humidity using Si7021
+  si7021_i2c_read(I2C0, measureRH_NHMM, false, SI7021_HUM_READ_CB);
 
-  // read relative humidity using Si7021
-  //si7021_i2c_read(I2C0, measureRH_NHMM, false, SI7021_HUM_READ_CB);
+  // wakeup SHTC3
+  shtc3_write(I2C1, wakeup, SHTC3_WAKEUP_CB);
 }
 
 
 /***************************************************************************//**
  * @brief
- *   Handles the scheduling of Si7021 humidity read callback
+ *   Handles the scheduling of the Si7021 humidity read callback
  *
  * @details
- *  Removes the triggering event from the scheduler and calculates relative
- *  humidity from the stored Si7021's measurement code.
+ *   The Si7021 takes a temperature measurement every time it measures
+ *   humidity. That means temperature can be read from a previous RH
+ *   measurement, without having to perform another full read.
+ *
+ *   This callback function transmits a read packet in order to read
+ *   temperature data from the previous RH measurement that scheduled
+ *   this callback.
  ******************************************************************************/
 void scheduled_si7021_hum_read_cb(void)
 {
   // remove event from scheduler
   remove_scheduled_event(SI7021_HUM_READ_CB);
 
-  // asset to ensure removed
-  EFM_ASSERT(!(get_scheduled_events() & SI7021_HUM_READ_CB));
-
-  // convert measured value to relative humidity
-  float rh = si7021_calc_RH();
-
-  // if relative humidity is greater than 30.0%...
-  if(rh >= RH_LED_ON)
-  {
-      // ... Assert LED1
-      GPIO_PinOutSet(LED1_PORT, LED1_PIN);
-  }
-  else
-  {
-      // De-assert LED1
-      GPIO_PinOutClear(LED1_PORT, LED1_PIN);
-  }
-
   // read temperature from previous previous RH measurement
   si7021_i2c_read(I2C0, MeasureTFromPrevRH, false, SI7021_TEMP_READ_CB);
 }
 
 
+/***************************************************************************//**
+ * @brief
+ *   Handles the scheduling of the Si7021 temperature read callback
+ *
+ * @details
+ *   Once relative humidity and temperature measurements have been received,
+ *   this callback function will store the converted values in static private
+ *   variables in the application layer. Then drives an LED on the EFM32
+ *   if the relative humidity threshold is reached.
+ ******************************************************************************/
 void scheduled_si7021_temp_read_cb(void)
 {
+  // remove event from scheduler
   remove_scheduled_event(SI7021_TEMP_READ_CB);
 
-  EFM_ASSERT(!(get_scheduled_events() & SI7021_TEMP_READ_CB));
+  // store measurements
+  si7021_rh = si7021_get_rh();
+  si7021_temp = si7021_get_temp();
 
-  float temp = si7021_calc_temp();
-
-  printf("Temperature: %3.6f", temp);
+  // drive LED
+  drive_leds(si7021_rh, LED0_PORT, LED0_PIN);
 }
 
 
+/***************************************************************************//**
+ * @brief
+ *   Handles the scheduling of the Si7021 write user register callback
+ *
+ * @details
+ *   Following a write to the SI7021's user register to configure measurement
+ *   resolution, a read packet is transmitted to retrieve the current settings
+ *   of the whole user register.
+ ******************************************************************************/
 void scheduled_si7021_write_reg_cb(void)
 {
+  // remove event from scheduler
   remove_scheduled_event(SI7021_WRITE_REG_CB);
 
-  EFM_ASSERT(!(get_scheduled_events() & SI7021_WRITE_REG_CB));
-
+  // read from user register
   si7021_i2c_read(I2C0, readReg1, false, SI7021_READ_REG_CB);
+
+  // store user register settings
+  si7021_user_reg = si7021_get_user_reg();
 }
 
 
+/***************************************************************************//**
+ * @brief
+ *   Handles the scheduling of the Si7021 read register callback
+ *
+ * @details
+ *   When the Si7021 is first opened and initialized, an initial write packet
+ *   is transmitted to the User Register 1 to set the measurement resolution.
+ *   Once completed a read is transmitted to measure relative humidity
+ ******************************************************************************/
 void scheduled_si7021_read_reg_cb(void)
 {
+  // remove event from scheduler
   remove_scheduled_event(SI7021_READ_REG_CB);
 
-  EFM_ASSERT(!(get_scheduled_events() & SI7021_READ_REG_CB));
-
-  uint32_t data = si7021_read_user_reg();
-
-  printf("Data in User Register 1: %lu", data);
-
-  // read relative humidity using Si7021
+  // measure relative humidity using Si7021
   si7021_i2c_read(I2C0, measureRH_NHMM, false, SI7021_HUM_READ_CB);
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *   Handles the scheduling of the SHTC3 sleep callback
+ *
+ * @details
+ *   Following putting the device to sleep (which is done after a measurement
+ *   is taken), the relative humidity and temperature measurements are then
+ *   parsed out and the raw values are converted to percent humidity and
+ *   temperature Celsius. An LED on the EFM32 is then driven if the
+ *   percent humidity threshold is reached.
+ ******************************************************************************/
+void scheduled_shtc3_sleep_cb(void)
+{
+  // remove event from scheduler
+  remove_scheduled_event(SHTC3_SLEEP_CB);
+
+  shtc3_parse_measurement_data_RH_first();
+
+  shtc3_rh = shtc3_get_rh();
+  shtc3_temp = shtc3_get_temp();
+
+  drive_leds(shtc3_rh, LED1_PORT, LED1_PIN);
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *   Handles the scheduling of the SHTC3 wakeup callback
+ *
+ * @details
+ *   Following the transmission of a wakeup command, a write packet is
+ *   transmitted to perform a measurement.
+ ******************************************************************************/
+void scheduled_shtc3_wakeup_cb(void)
+{
+  // remove event from scheduler
+  remove_scheduled_event(SHTC3_WAKEUP_CB);
+
+  shtc3_write(I2C1, readRHFirst_LPM, SHTC3_MEASUREMENT_CB);
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *   Handles the scheduling of the SHTC3 measurement callback
+ *
+ * @details
+ *   Following the transmission of a measurement command, a read packet is
+ *   transmitted to retrieve the measurement data from the SHTC3
+ ******************************************************************************/
+void scheduled_shtc3_measurement_cb(void)
+{
+  // remove event from scheduler
+  remove_scheduled_event(SHTC3_MEASUREMENT_CB);
+
+  shtc3_read(I2C1, false, SHTC3_READ_REQ_CB);
+}
+
+
+/***************************************************************************//**
+ * @brief
+ *   Handles the scheduling of the SHTC3 read request callback
+ *
+ * @details
+ *   Following the a read transaction, a sleep packet is sent to put the
+ *   SHTC3 back to sleep. The SHTC3 should be put to sleep following every
+ *   transaction.
+ ******************************************************************************/
+void scheduled_shtc3_read_req_cb(void)
+{
+  // remove event from scheduler
+  remove_scheduled_event(SHTC3_READ_REQ_CB);
+
+  // transmit a sleep command
+  shtc3_write(I2C1, sleep, SHTC3_SLEEP_CB);
 }
