@@ -1,3 +1,15 @@
+/***************************************************************************//**
+ * @file
+ *   brd_config.h
+ * @author
+ *   Frank McDermott
+ * @date
+ *   11/29/2022
+ * @brief
+ *   Header File for board configuration
+ ******************************************************************************/
+
+
 #ifndef BRD_CONFIG_HG
 #define BRD_CONFIG_HG
 

@@ -352,7 +352,7 @@ uint16_t shtc3_calc_temp(uint16_t data)
  *  Enumerated command to determine whether the I2C state machine requires
  *  locking.
  *
- * @param[out] lock
+ * @return lock
  *  Returns whether or not a command requires locking the state machine.
  ******************************************************************************/
 bool check_lock(SHTC3_CMD_Typedef cmd)

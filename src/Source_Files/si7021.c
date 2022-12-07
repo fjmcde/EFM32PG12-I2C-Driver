@@ -336,7 +336,7 @@ uint8_t si7021_store_user_reg(void)
  *  @param[in] cmd
  *   8-bit command used to determine how many bytes to expect.
  *
- *  @param[out] bytes
+ *  @return bytes
  *   Returns number of bytes a command should expect
  ******************************************************************************/
 uint8_t req_bytes(uint8_t cmd)
@@ -380,7 +380,7 @@ uint8_t req_bytes(uint8_t cmd)
  * @details
  *  Provides the application layer with read access to private data members.
  *
- * @param[out]
+ * @return
  *  Returns relative humidity data.
  ******************************************************************************/
 float si7021_get_rh()
@@ -405,7 +405,7 @@ float si7021_get_rh()
  * @details
  *  Provides the application layer with read access to private data members.
  *
- * @param[out]
+ * @return
  *  Returns temperature data.
  ******************************************************************************/
 float si7021_get_temp()

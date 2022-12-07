@@ -1,3 +1,15 @@
+/***************************************************************************//**
+ * @file
+ *   gpio.h
+ * @author
+ *   Frank McDermott
+ * @date
+ *   11/29/2022
+ * @brief
+ *   Header file for configuring GPIO peripherals
+ ******************************************************************************/
+
+
 #ifndef GPIO_HG
 #define GPIO_HG
 

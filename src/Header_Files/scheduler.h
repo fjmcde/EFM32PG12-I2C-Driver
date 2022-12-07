@@ -1,3 +1,14 @@
+/***************************************************************************//**
+ * @file
+ *   scheduler.h
+ * @author
+ *   Frank McDermott
+ * @date
+ *   11/29/2022
+ * @brief
+ *   Header file for the scheduler
+ ******************************************************************************/
+
 #ifndef SCHEDULER_HG
 #define	SCHEDULER_HG
 
@@ -20,7 +31,7 @@
 //*******************************************************
 // defined macros
 //*******************************************************
-#define CLEAR_SCHEDULED_EVENTS           (uint32_t)(0x00) // mask to clear all scheduled events
+#define CLEAR_SCHEDULED_EVENTS  (uint32_t)(0x00) // mask to clear all scheduled events
 
 
 //***********************************************************************************

@@ -1,3 +1,14 @@
+/***************************************************************************//**
+ * @file
+ *   HW_delay.h
+ * @author
+ *   kgraham
+ * @date
+ *   11/29/2022
+ * @brief
+ *   Header file for Hardware timer delay
+ ******************************************************************************/
+
 #ifndef HW_DELAY_HG
 #define HW_DELAY_HG
 

@@ -1,3 +1,14 @@
+/***************************************************************************//**
+ * @file
+ *   letimer.h
+ * @author
+ *   Frank McDermott
+ * @date
+ *   11/29/2022
+ * @brief
+ *   Header file for the LETIMER peripheral
+ ******************************************************************************/
+
 #ifndef	LETIMER_HG
 #define	LETIMER_HG
 
@@ -42,22 +53,22 @@
 //***********************************************************************************
 // structs
 //***********************************************************************************
-// app specific letimer struct for PWM mode
+/*! App specific letimer struct for PWM mode */
 typedef struct {
-	bool 			  debugRun;			        // True = keep LETIMER running will halted
-	bool 			  enable;				        // enable the LETIMER upon completion of open
-	uint32_t		out_pin_route0;		    // out 0 route to gpio port/pin
-	uint32_t		out_pin_route1;		    // out 1 route to gpio port/pin
-	bool			  out_pin_0_en;		      // enable out 0 route
-	bool			  out_pin_1_en;		      // enable out 1 route
-	float			  period;				        // seconds
-	float			  active_period;        // seconds
-	bool        comp0_irq_enable;     // enable interrupt on comp0 interrupt
-	uint32_t    comp0_cb;             // comp0 callback register
-	bool        comp1_irq_enable;     // enable interrupt on comp1 interrupt
-	uint32_t    comp1_cb;             // comp1 callback register
-	bool        uf_irq_enable;        // enable interrupt uf comp0 interrupt
-	uint32_t    uf_cb;                // underflow callback register
+	bool 			  debugRun;			        /// True = keep LETIMER running will halted
+	bool 			  enable;				        /// enable the LETIMER upon completion of open
+	uint32_t		out_pin_route0;		    /// out 0 route to gpio port/pin
+	uint32_t		out_pin_route1;		    /// out 1 route to gpio port/pin
+	bool			  out_pin_0_en;		      /// enable out 0 route
+	bool			  out_pin_1_en;		      /// enable out 1 route
+	float			  period;				        /// period (in seconds)
+	float			  active_period;        /// active period (in seconds)
+	bool        comp0_irq_enable;     /// enable interrupt on comp0 interrupt
+	uint32_t    comp0_cb;             /// comp0 callback register
+	bool        comp1_irq_enable;     /// enable interrupt on comp1 interrupt
+	uint32_t    comp1_cb;             /// comp1 callback register
+	bool        uf_irq_enable;        /// enable interrupt underflow comp0 interrupt
+	uint32_t    uf_cb;                /// underflow callback register
 } APP_LETIMER_PWM_TypeDef ;
 
 

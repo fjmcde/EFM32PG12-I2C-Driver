@@ -1,3 +1,14 @@
+/***************************************************************************//**
+ * @file
+ *   shtc3.h
+ * @author
+ *   Frank McDermott
+ * @date
+ *   11/29/2022
+ * @brief
+ *   Header file for SHTC3 device
+ ******************************************************************************/
+
 #ifndef SHTC3_H_
 #define SHTC3_H_
 
@@ -41,23 +52,24 @@
 //***********************************************************************************
 // enums
 //***********************************************************************************
+/*! Enumerated SHTC3 commands */
 typedef enum
 {
   /* power and sleep commands */
-  sleep                 = 0xB098, /* Sleep */
-  wakeup                = 0x3517, /* Wake-up */
-  softReset             = 0x805D, /* Software Reset*/
+  sleep                 = 0xB098, /*! Sleep */
+  wakeup                = 0x3517, /*! Wake-up */
+  softReset             = 0x805D, /*! Software Reset*/
   /* measurement commands */
-  readTFirst_NM_CS      = 0x7CA2, /* Read temperature first; normal mode; clock stretching enabled */
-  readTFirst_LPM_CS     = 0x6458, /* Read temperature first; low power mode; clock stretching enabled */
-  readTFirst_NM         = 0x7866, /* Read temperature first; normal mode; clock stretching disabled */
-  readTFirst_LPM        = 0x609C, /* Read temperature first; low power mode; clock stretching disabled */
-  readRHFirst_NM_CS     = 0x5C24, /* Read relative humidity first; normal mode; clock stretching enabled */
-  readRHFirst_LPM_CS    = 0x44DE, /* Read relative humidity first; low power mode; clock stretching enabled */
-  readRHFirst_NM        = 0x58E0, /* Read relative humidity first; normal mode; clock stretching disabled */
-  readRHFirst_LPM       = 0x401A, /* Read relative humidity first; low power mode; clock stretching disabled */
+  readTFirst_NM_CS      = 0x7CA2, /*! Read temperature first; normal mode; clock stretching enabled */
+  readTFirst_LPM_CS     = 0x6458, /*! Read temperature first; low power mode; clock stretching enabled */
+  readTFirst_NM         = 0x7866, /*! Read temperature first; normal mode; clock stretching disabled */
+  readTFirst_LPM        = 0x609C, /*! Read temperature first; low power mode; clock stretching disabled */
+  readRHFirst_NM_CS     = 0x5C24, /*! Read relative humidity first; normal mode; clock stretching enabled */
+  readRHFirst_LPM_CS    = 0x44DE, /*! Read relative humidity first; low power mode; clock stretching enabled */
+  readRHFirst_NM        = 0x58E0, /*! Read relative humidity first; normal mode; clock stretching disabled */
+  readRHFirst_LPM       = 0x401A, /*! Read relative humidity first; low power mode; clock stretching disabled */
   /* read out commands */
-  read_id_reg           = 0xEFC8  /* Read ID register to verify the presence of and communication with the SHTC3 */
+  read_id_reg           = 0xEFC8  /*! Read ID register to verify the presence of and communication with the SHTC3 */
 }SHTC3_CMD_Typedef;
 
 

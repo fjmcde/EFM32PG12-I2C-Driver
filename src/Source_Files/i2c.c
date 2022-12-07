@@ -277,7 +277,7 @@ static void tx_cmd_msb(volatile I2C_SM_STRUCT *i2c_sm)
  *  Pointer to desired I2C state machine, which has previously been
  *  initialized.
  *
- * @param[out] tx
+ * @return tx
  *  Returns the isolated MSByte
  *
  ******************************************************************************/
