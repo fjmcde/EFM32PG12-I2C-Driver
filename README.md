@@ -3,10 +3,10 @@ I developed a driver for the I²C protocol on the Silicon Labs EFM32 Pearl Gecko
 
 # Features
 • Compatible with either the I2C0 or I2C1 peripheral on the EFM32 Peark Gecko.\
-• Interfaces with the onboard Si7021 (in the application layer).\
-• Capable of measuring the relative humidity of the surrounding environment.\
+• Interfaces with the onboard Si7021 and external SHTC3 Temperature and Humidity sensors.\
+• Capable of measuring the relative humidity and temperature of the surrounding environment.\
+• Can handle 8-bit and 16-bit data transmission (read or write).\
 
 # Working on ...
-• Adding functionality to read temperature data from the relative humidity reading.\
-• Adding functionality to write to user specific registers on the Si7021.\
-• Refactoring state machine code to include additional states.
+• Handling Checksum (CRC).\
+• Adding functionality for enumerated commands that currently aren't implemented.\
